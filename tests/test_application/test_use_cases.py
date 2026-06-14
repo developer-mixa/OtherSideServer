@@ -1,0 +1,166 @@
+"""Application use case tests."""
+
+from decimal import Decimal
+from uuid import uuid4
+
+import pytest
+
+from application.dtos import (
+    CompanyGameCreateDTO,
+    PaymentCreateDTO,
+    PromocodeCreateDTO,
+    SubscriptionCreateDTO,
+    SubscriptionPlanCreateDTO,
+    UserCreateDTO,
+)
+from application.use_cases import (
+    CreateCompanyGameUseCase,
+    CreatePaymentUseCase,
+    CreatePromocodeUseCase,
+    CreateRoleUseCase,
+    CreateSubscriptionPlanUseCase,
+    CreateSubscriptionUseCase,
+    DeleteCompanyGameUseCase,
+    GetCurrentUserUseCase,
+    ListRolesUseCase,
+    LoginUserUseCase,
+    RegisterUserUseCase,
+)
+from config.security import hash_password
+from domain.entities import CompanyGame, Role, SubscriptionPlan, User
+from domain.exceptions import (
+    AuthenticationError,
+    DuplicateEntityError,
+    EntityNotFoundError,
+)
+from tests.conftest import FakeUnitOfWork, InMemoryStore
+
+
+@pytest.fixture
+def uow() -> FakeUnitOfWork:
+    return FakeUnitOfWork()
+
+
+class TestRegisterUserUseCase:
+    async def test_register_success(self, uow: FakeUnitOfWork) -> None:
+        use_case = RegisterUserUseCase(uow)
+        dto = UserCreateDTO(username="newuser", email="new@example.com", password="password123")
+        result = await use_case.execute(dto)
+        assert result.username == "newuser"
+        assert result.email == "new@example.com"
+
+    async def test_register_duplicate_email(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("existing", "dup@example.com", "hash")
+        uow._store.users[user.id] = user
+        use_case = RegisterUserUseCase(uow)
+        dto = UserCreateDTO(username="other", email="dup@example.com", password="password123")
+        with pytest.raises(DuplicateEntityError):
+            await use_case.execute(dto)
+
+
+class TestLoginUserUseCase:
+    async def test_login_success(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("loginuser", "login@example.com", hash_password("password123"))
+        uow._store.users[user.id] = user
+        use_case = LoginUserUseCase(uow)
+        result = await use_case.execute("login@example.com", "password123")
+        assert result.access_token
+
+    async def test_login_wrong_password(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("loginuser", "login@example.com", hash_password("password123"))
+        uow._store.users[user.id] = user
+        use_case = LoginUserUseCase(uow)
+        with pytest.raises(AuthenticationError):
+            await use_case.execute("login@example.com", "wrongpass")
+
+
+class TestGetCurrentUserUseCase:
+    async def test_get_existing_user(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("me", "me@example.com", "hash")
+        uow._store.users[user.id] = user
+        result = await GetCurrentUserUseCase(uow).execute(user.id)
+        assert result.email == "me@example.com"
+
+    async def test_get_missing_user(self, uow: FakeUnitOfWork) -> None:
+        with pytest.raises(EntityNotFoundError):
+            await GetCurrentUserUseCase(uow).execute(uuid4())
+
+
+class TestRoleUseCases:
+    async def test_create_and_list_roles(self, uow: FakeUnitOfWork) -> None:
+        created = await CreateRoleUseCase(uow).execute("admin")
+        roles = await ListRolesUseCase(uow).execute()
+        assert created.role == "admin"
+        assert len(roles) == 1
+
+    async def test_create_duplicate_role(self, uow: FakeUnitOfWork) -> None:
+        uow._store.roles[uuid4()] = Role.create("admin")
+        with pytest.raises(DuplicateEntityError):
+            await CreateRoleUseCase(uow).execute("admin")
+
+
+class TestCompanyGameUseCases:
+    async def test_create_game(self, uow: FakeUnitOfWork) -> None:
+        result = await CreateCompanyGameUseCase(uow).execute(CompanyGameCreateDTO(game="CS2"))
+        assert result.game == "CS2"
+
+    async def test_delete_game(self, uow: FakeUnitOfWork) -> None:
+        game = CompanyGame.create("Dota2")
+        uow._store.company_games[game.id] = game
+        await DeleteCompanyGameUseCase(uow).execute(game.id)
+        assert game.id not in uow._store.company_games
+
+    async def test_delete_missing_game(self, uow: FakeUnitOfWork) -> None:
+        with pytest.raises(EntityNotFoundError):
+            await DeleteCompanyGameUseCase(uow).execute(uuid4())
+
+
+class TestSubscriptionPlanUseCases:
+    async def test_create_plan_with_game(self, uow: FakeUnitOfWork) -> None:
+        game = CompanyGame.create("Minecraft")
+        uow._store.company_games[game.id] = game
+        dto = SubscriptionPlanCreateDTO(type="monthly", game_id=game.id)
+        result = await CreateSubscriptionPlanUseCase(uow).execute(dto)
+        assert result.type == "monthly"
+
+    async def test_create_plan_missing_game(self, uow: FakeUnitOfWork) -> None:
+        dto = SubscriptionPlanCreateDTO(type="monthly", game_id=uuid4())
+        with pytest.raises(EntityNotFoundError):
+            await CreateSubscriptionPlanUseCase(uow).execute(dto)
+
+
+class TestSubscriptionUseCases:
+    async def test_create_subscription(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("subuser", "sub@example.com", "hash")
+        uow._store.users[user.id] = user
+        dto = SubscriptionCreateDTO(user_id=user.id)
+        result = await CreateSubscriptionUseCase(uow).execute(dto)
+        assert result.user_id == user.id
+
+
+class TestPromocodeUseCases:
+    async def test_create_promocode(self, uow: FakeUnitOfWork) -> None:
+        plan = SubscriptionPlan.create("monthly")
+        uow._store.subscription_plans[plan.id] = plan
+        dto = PromocodeCreateDTO(code="SAVE10", plan_id=plan.id)
+        result = await CreatePromocodeUseCase(uow).execute(dto)
+        assert result.code == "SAVE10"
+
+
+class TestPaymentUseCases:
+    async def test_create_payment_idempotent(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("payuser", "pay@example.com", "hash")
+        plan = SubscriptionPlan.create("monthly")
+        uow._store.users[user.id] = user
+        uow._store.subscription_plans[plan.id] = plan
+        dto = PaymentCreateDTO(
+            user_id=user.id,
+            plan_id=plan.id,
+            amount=Decimal("100.00"),
+            status="pending",
+            robokassa_invoice_id="inv-1",
+            idempotency_key="idem-1",
+        )
+        first = await CreatePaymentUseCase(uow).execute(dto)
+        second = await CreatePaymentUseCase(uow).execute(dto)
+        assert first.id == second.id

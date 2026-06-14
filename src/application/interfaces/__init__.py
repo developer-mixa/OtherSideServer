@@ -1,0 +1,137 @@
+"""Repository and Unit of Work protocol definitions."""
+
+from __future__ import annotations
+
+from typing import Protocol
+from uuid import UUID
+
+from application.dtos import (
+    CompanyGameCreateDTO,
+    CompanyGameDTO,
+    PaymentCreateDTO,
+    PaymentDTO,
+    PromocodeCreateDTO,
+    PromocodeDTO,
+    RoleDTO,
+    SubscriptionCreateDTO,
+    SubscriptionDTO,
+    SubscriptionPlanCreateDTO,
+    SubscriptionPlanDTO,
+    UserCreateDTO,
+    UserDTO,
+)
+from domain.entities import (
+    CompanyGame,
+    Payment,
+    PaymentEvent,
+    PromocodeEntity,
+    Role,
+    Subscription,
+    SubscriptionPlan,
+    User,
+)
+
+
+class RoleRepositoryProtocol(Protocol):
+    async def get_by_id(self, role_id: UUID) -> Role | None: ...
+    async def get_by_name(self, name: str) -> Role | None: ...
+    async def list_all(self) -> list[Role]: ...
+    async def add(self, entity: Role) -> Role: ...
+
+
+class UserRepositoryProtocol(Protocol):
+    async def get_by_id(self, user_id: UUID) -> User | None: ...
+    async def get_by_email(self, email: str) -> User | None: ...
+    async def get_by_username(self, username: str) -> User | None: ...
+    async def add(self, entity: User) -> User: ...
+    async def list_all(self) -> list[User]: ...
+
+
+class CompanyGameRepositoryProtocol(Protocol):
+    async def get_by_id(self, game_id: UUID) -> CompanyGame | None: ...
+    async def get_by_name(self, name: str) -> CompanyGame | None: ...
+    async def list_all(self) -> list[CompanyGame]: ...
+    async def add(self, entity: CompanyGame) -> CompanyGame: ...
+    async def delete(self, game_id: UUID) -> None: ...
+
+
+class SubscriptionPlanRepositoryProtocol(Protocol):
+    async def get_by_id(self, plan_id: UUID) -> SubscriptionPlan | None: ...
+    async def list_all(self) -> list[SubscriptionPlan]: ...
+    async def add(self, entity: SubscriptionPlan) -> SubscriptionPlan: ...
+    async def delete(self, plan_id: UUID) -> None: ...
+
+
+class SubscriptionRepositoryProtocol(Protocol):
+    async def get_by_id(self, subscription_id: UUID) -> Subscription | None: ...
+    async def get_by_user(self, user_id: UUID) -> list[Subscription]: ...
+    async def add(self, entity: Subscription) -> Subscription: ...
+    async def delete(self, subscription_id: UUID) -> None: ...
+
+
+class PromocodeRepositoryProtocol(Protocol):
+    async def get_by_id(self, promocode_id: UUID) -> PromocodeEntity | None: ...
+    async def get_by_code(self, code: str) -> PromocodeEntity | None: ...
+    async def list_all(self) -> list[PromocodeEntity]: ...
+    async def add(self, entity: PromocodeEntity) -> PromocodeEntity: ...
+    async def delete(self, promocode_id: UUID) -> None: ...
+
+
+class PaymentRepositoryProtocol(Protocol):
+    async def get_by_id(self, payment_id: UUID) -> Payment | None: ...
+    async def get_by_idempotency_key(self, key: str) -> Payment | None: ...
+    async def list_by_user(self, user_id: UUID) -> list[Payment]: ...
+    async def add(self, entity: Payment) -> Payment: ...
+
+
+class PaymentEventRepositoryProtocol(Protocol):
+    async def add(self, entity: PaymentEvent) -> PaymentEvent: ...
+    async def list_unprocessed(self) -> list[PaymentEvent]: ...
+
+
+class UnitOfWorkProtocol(Protocol):
+    roles: RoleRepositoryProtocol
+    users: UserRepositoryProtocol
+    company_games: CompanyGameRepositoryProtocol
+    subscription_plans: SubscriptionPlanRepositoryProtocol
+    subscriptions: SubscriptionRepositoryProtocol
+    promocodes: PromocodeRepositoryProtocol
+    payments: PaymentRepositoryProtocol
+    payment_events: PaymentEventRepositoryProtocol
+
+    async def __aenter__(self) -> UnitOfWorkProtocol: ...
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None: ...
+    async def commit(self) -> None: ...
+    async def rollback(self) -> None: ...
+
+
+# Re-export DTO types for convenience in use cases
+__all__ = [
+    "RoleDTO",
+    "UserDTO",
+    "UserCreateDTO",
+    "CompanyGameDTO",
+    "CompanyGameCreateDTO",
+    "SubscriptionPlanDTO",
+    "SubscriptionPlanCreateDTO",
+    "SubscriptionDTO",
+    "SubscriptionCreateDTO",
+    "PromocodeDTO",
+    "PromocodeCreateDTO",
+    "PaymentDTO",
+    "PaymentCreateDTO",
+    "RoleRepositoryProtocol",
+    "UserRepositoryProtocol",
+    "CompanyGameRepositoryProtocol",
+    "SubscriptionPlanRepositoryProtocol",
+    "SubscriptionRepositoryProtocol",
+    "PromocodeRepositoryProtocol",
+    "PaymentRepositoryProtocol",
+    "PaymentEventRepositoryProtocol",
+    "UnitOfWorkProtocol",
+]

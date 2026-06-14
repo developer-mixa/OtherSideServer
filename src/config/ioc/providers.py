@@ -1,0 +1,111 @@
+"""Dishka DI providers."""
+
+from collections.abc import AsyncIterator
+
+from dishka import Provider, Scope, provide
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from application.use_cases import (
+    CreateCompanyGameUseCase,
+    CreatePaymentUseCase,
+    CreatePromocodeUseCase,
+    CreateRoleUseCase,
+    CreateSubscriptionPlanUseCase,
+    CreateSubscriptionUseCase,
+    DeleteCompanyGameUseCase,
+    GetCurrentUserUseCase,
+    ListCompanyGamesUseCase,
+    ListPaymentsUseCase,
+    ListPromocodesUseCase,
+    ListRolesUseCase,
+    ListSubscriptionPlansUseCase,
+    ListSubscriptionsUseCase,
+    LoginUserUseCase,
+    RegisterUserUseCase,
+)
+from config.settings import settings
+from infrastructure.db.unit_of_work import SqlAlchemyUnitOfWork
+
+
+class AppProvider(Provider):
+    """Application-wide dependency injection container."""
+
+    @provide(scope=Scope.APP)
+    def engine(self) -> async_sessionmaker[AsyncSession]:
+        engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
+        return async_sessionmaker(engine, expire_on_commit=False)
+
+    @provide(scope=Scope.REQUEST)
+    async def session(
+        self, factory: async_sessionmaker[AsyncSession]
+    ) -> AsyncIterator[AsyncSession]:
+        async with factory() as session:
+            yield session
+
+    @provide(scope=Scope.REQUEST)
+    def unit_of_work(self, session: AsyncSession) -> SqlAlchemyUnitOfWork:
+        return SqlAlchemyUnitOfWork(session)
+
+    @provide(scope=Scope.REQUEST)
+    def register_user(self, uow: SqlAlchemyUnitOfWork) -> RegisterUserUseCase:
+        return RegisterUserUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def login_user(self, uow: SqlAlchemyUnitOfWork) -> LoginUserUseCase:
+        return LoginUserUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def get_current_user(self, uow: SqlAlchemyUnitOfWork) -> GetCurrentUserUseCase:
+        return GetCurrentUserUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def list_roles(self, uow: SqlAlchemyUnitOfWork) -> ListRolesUseCase:
+        return ListRolesUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def create_role(self, uow: SqlAlchemyUnitOfWork) -> CreateRoleUseCase:
+        return CreateRoleUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def list_company_games(self, uow: SqlAlchemyUnitOfWork) -> ListCompanyGamesUseCase:
+        return ListCompanyGamesUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def create_company_game(self, uow: SqlAlchemyUnitOfWork) -> CreateCompanyGameUseCase:
+        return CreateCompanyGameUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def delete_company_game(self, uow: SqlAlchemyUnitOfWork) -> DeleteCompanyGameUseCase:
+        return DeleteCompanyGameUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def list_subscription_plans(self, uow: SqlAlchemyUnitOfWork) -> ListSubscriptionPlansUseCase:
+        return ListSubscriptionPlansUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def create_subscription_plan(self, uow: SqlAlchemyUnitOfWork) -> CreateSubscriptionPlanUseCase:
+        return CreateSubscriptionPlanUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def list_subscriptions(self, uow: SqlAlchemyUnitOfWork) -> ListSubscriptionsUseCase:
+        return ListSubscriptionsUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def create_subscription(self, uow: SqlAlchemyUnitOfWork) -> CreateSubscriptionUseCase:
+        return CreateSubscriptionUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def list_promocodes(self, uow: SqlAlchemyUnitOfWork) -> ListPromocodesUseCase:
+        return ListPromocodesUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def create_promocode(self, uow: SqlAlchemyUnitOfWork) -> CreatePromocodeUseCase:
+        return CreatePromocodeUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def list_payments(self, uow: SqlAlchemyUnitOfWork) -> ListPaymentsUseCase:
+        return ListPaymentsUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def create_payment(self, uow: SqlAlchemyUnitOfWork) -> CreatePaymentUseCase:
+        return CreatePaymentUseCase(uow)
