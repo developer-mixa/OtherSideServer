@@ -28,26 +28,26 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
 CREATE TABLE IF NOT EXISTS subscriptions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     plan_id UUID REFERENCES subscription_plans(id) ON DELETE SET NULL,
-    user_id UUID REFERENCES users(id) NOT NULL ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     active_until DATE DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS promocodes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code VARCHAR UNIQUE NOT NULL,
-    plan_id UUID REFERENCES subscription_plans(id) NOT NULL ON DELETE CASCADE,
+    plan_id UUID NOT NULL REFERENCES subscription_plans(id) ON DELETE CASCADE,
     is_active BOOLEAN DEFAULT true
 );
 
 CREATE TABLE IF NOT EXISTS payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) NOT NULL ON DELETE CASCADE,
-    plan_id UUID REFERENCES subscription_plans(id) NOT NULL ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id UUID NOT NULL REFERENCES subscription_plans(id) ON DELETE CASCADE,
     amount DECIMAL(10, 2) NOT NULL,
     status VARCHAR NOT NULL,
     robokassa_invoice_id VARCHAR UNIQUE NOT NULL,
     idempotency_key VARCHAR UNIQUE NOT NULL,
-    paid_at TIMESTAMPTZ NULL,
+    paid_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
