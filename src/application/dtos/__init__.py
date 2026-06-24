@@ -116,6 +116,11 @@ class PaymentCreateDTO:
 
 
 @dataclass(slots=True)
+class MaintenanceModeDTO:
+    enabled: bool
+
+
+@dataclass(slots=True)
 class PaymentEventDTO:
     id: UUID
     payment_id: UUID | None

@@ -162,6 +162,12 @@ class Payment:
 
 
 @dataclass
+class SystemSettings:
+    maintenance_mode: bool = False
+    id: int = 1
+
+
+@dataclass
 class PaymentEvent:
     id: UUID
     payment_id: UUID | None

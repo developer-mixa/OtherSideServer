@@ -114,3 +114,7 @@ pre-commit install
 ```
 
 Runs ruff (lint + format) and mypy on each commit.
+
+## Production deployment
+
+Полная инструкция для Selectel (VPS + Nginx + SSL): [../DEPLOY-SELECTEL.md](../DEPLOY-SELECTEL.md)

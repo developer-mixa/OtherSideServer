@@ -28,6 +28,7 @@ from domain.entities import (
     Role,
     Subscription,
     SubscriptionPlan,
+    SystemSettings,
     User,
 )
 
@@ -89,6 +90,11 @@ class PaymentEventRepositoryProtocol(Protocol):
     async def list_unprocessed(self) -> list[PaymentEvent]: ...
 
 
+class SystemSettingsRepositoryProtocol(Protocol):
+    async def get(self) -> SystemSettings: ...
+    async def set_maintenance_mode(self, enabled: bool) -> SystemSettings: ...
+
+
 class UnitOfWorkProtocol(Protocol):
     roles: RoleRepositoryProtocol
     users: UserRepositoryProtocol
@@ -98,6 +104,7 @@ class UnitOfWorkProtocol(Protocol):
     promocodes: PromocodeRepositoryProtocol
     payments: PaymentRepositoryProtocol
     payment_events: PaymentEventRepositoryProtocol
+    system_settings: SystemSettingsRepositoryProtocol
 
     async def __aenter__(self) -> UnitOfWorkProtocol: ...
     async def __aexit__(
@@ -133,5 +140,6 @@ __all__ = [
     "PromocodeRepositoryProtocol",
     "PaymentRepositoryProtocol",
     "PaymentEventRepositoryProtocol",
+    "SystemSettingsRepositoryProtocol",
     "UnitOfWorkProtocol",
 ]

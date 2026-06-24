@@ -14,6 +14,7 @@ from application.use_cases import (
     CreateSubscriptionUseCase,
     DeleteCompanyGameUseCase,
     GetCurrentUserUseCase,
+    GetMaintenanceModeUseCase,
     ListCompanyGamesUseCase,
     ListPaymentsUseCase,
     ListPromocodesUseCase,
@@ -22,6 +23,7 @@ from application.use_cases import (
     ListSubscriptionsUseCase,
     LoginUserUseCase,
     RegisterUserUseCase,
+    SetMaintenanceModeUseCase,
 )
 from config.settings import settings
 from infrastructure.db.unit_of_work import SqlAlchemyUnitOfWork
@@ -109,3 +111,11 @@ class AppProvider(Provider):
     @provide(scope=Scope.REQUEST)
     def create_payment(self, uow: SqlAlchemyUnitOfWork) -> CreatePaymentUseCase:
         return CreatePaymentUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def get_maintenance_mode(self, uow: SqlAlchemyUnitOfWork) -> GetMaintenanceModeUseCase:
+        return GetMaintenanceModeUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def set_maintenance_mode(self, uow: SqlAlchemyUnitOfWork) -> SetMaintenanceModeUseCase:
+        return SetMaintenanceModeUseCase(uow)

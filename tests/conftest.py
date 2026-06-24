@@ -20,6 +20,7 @@ from application.use_cases import (
     CreateSubscriptionUseCase,
     DeleteCompanyGameUseCase,
     GetCurrentUserUseCase,
+    GetMaintenanceModeUseCase,
     ListCompanyGamesUseCase,
     ListPaymentsUseCase,
     ListPromocodesUseCase,
@@ -28,6 +29,7 @@ from application.use_cases import (
     ListSubscriptionsUseCase,
     LoginUserUseCase,
     RegisterUserUseCase,
+    SetMaintenanceModeUseCase,
 )
 from config.security import create_access_token, hash_password
 from domain.entities import (
@@ -37,6 +39,7 @@ from domain.entities import (
     Role,
     Subscription,
     SubscriptionPlan,
+    SystemSettings,
     User,
 )
 from infrastructure.db.base import Base
@@ -58,6 +61,7 @@ class InMemoryStore:
         self.subscriptions: dict[UUID, Subscription] = {}
         self.promocodes: dict[UUID, PromocodeEntity] = {}
         self.payments: dict[UUID, Payment] = {}
+        self.system_settings = SystemSettings(maintenance_mode=False)
 
 
 class FakeRoleRepo:
@@ -209,6 +213,18 @@ class FakePaymentEventRepo:
         return []
 
 
+class FakeSystemSettingsRepo:
+    def __init__(self, store: InMemoryStore) -> None:
+        self._store = store
+
+    async def get(self) -> SystemSettings:
+        return self._store.system_settings
+
+    async def set_maintenance_mode(self, enabled: bool) -> SystemSettings:
+        self._store.system_settings = SystemSettings(maintenance_mode=enabled)
+        return self._store.system_settings
+
+
 class FakeUnitOfWork:
     """In-memory UoW for API and application tests."""
 
@@ -222,6 +238,7 @@ class FakeUnitOfWork:
         self.promocodes = FakePromocodeRepo(self._store)
         self.payments = FakePaymentRepo(self._store)
         self.payment_events = FakePaymentEventRepo()
+        self.system_settings = FakeSystemSettingsRepo(self._store)
         self._committed = False
 
     async def __aenter__(self) -> FakeUnitOfWork:
@@ -310,6 +327,14 @@ class TestProvider(Provider):
     @provide(scope=Scope.REQUEST)
     def create_payment(self) -> CreatePaymentUseCase:
         return CreatePaymentUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def get_maintenance_mode(self) -> GetMaintenanceModeUseCase:
+        return GetMaintenanceModeUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def set_maintenance_mode(self) -> SetMaintenanceModeUseCase:
+        return SetMaintenanceModeUseCase(self._uow)
 
 
 @pytest.fixture

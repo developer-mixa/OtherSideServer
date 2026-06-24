@@ -10,6 +10,7 @@ from application.dtos import (
     AuthTokenDTO,
     CompanyGameCreateDTO,
     CompanyGameDTO,
+    MaintenanceModeDTO,
     PaymentCreateDTO,
     PaymentDTO,
     PromocodeCreateDTO,
@@ -33,6 +34,7 @@ from application.mappers import (
     user_to_dto,
 )
 from config.security import create_access_token, hash_password, verify_password
+from config.settings import is_admin_role
 from domain.entities import (
     CompanyGame,
     Payment,
@@ -44,10 +46,12 @@ from domain.entities import (
 )
 from domain.exceptions import (
     AuthenticationError,
+    AuthorizationError,
     DuplicateEntityError,
     EntityNotFoundError,
 )
 from domain.value_objects import Email, Password, Username
+from infrastructure.cache.maintenance_cache import MaintenanceModeCache
 
 
 class RegisterUserUseCase:
@@ -304,3 +308,36 @@ class CreatePaymentUseCase:
             await self._uow.payments.add(payment)
             await self._uow.commit()
             return payment_to_dto(payment)
+
+
+class GetMaintenanceModeUseCase:
+    """Return current maintenance mode flag."""
+
+    def __init__(self, uow: UnitOfWorkProtocol) -> None:
+        self._uow = uow
+
+    async def execute(self) -> MaintenanceModeDTO:
+        async with self._uow:
+            settings = await self._uow.system_settings.get()
+            MaintenanceModeCache.set(settings.maintenance_mode)
+            return MaintenanceModeDTO(enabled=settings.maintenance_mode)
+
+
+class SetMaintenanceModeUseCase:
+    """Update maintenance mode (admin only)."""
+
+    def __init__(self, uow: UnitOfWorkProtocol) -> None:
+        self._uow = uow
+
+    async def execute(self, user_id: UUID, enabled: bool) -> MaintenanceModeDTO:
+        async with self._uow:
+            user = await self._uow.users.get_by_id(user_id)
+            if user is None:
+                raise EntityNotFoundError("User", user_id)
+            if not is_admin_role(user.role_id):
+                raise AuthorizationError()
+
+            await self._uow.system_settings.set_maintenance_mode(enabled)
+            await self._uow.commit()
+            MaintenanceModeCache.set(enabled)
+            return MaintenanceModeDTO(enabled=enabled)

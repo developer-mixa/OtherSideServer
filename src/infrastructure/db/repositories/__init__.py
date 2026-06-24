@@ -16,6 +16,7 @@ from domain.entities import (
     Role,
     Subscription,
     SubscriptionPlan,
+    SystemSettings,
     User,
 )
 from infrastructure.db.models import (
@@ -26,6 +27,7 @@ from infrastructure.db.models import (
     RoleModel,
     SubscriptionModel,
     SubscriptionPlanModel,
+    SystemSettingsModel,
     UserModel,
 )
 from infrastructure.mappers import (
@@ -43,6 +45,8 @@ from infrastructure.mappers import (
     subscription_model_to_entity,
     subscription_plan_entity_to_model,
     subscription_plan_model_to_entity,
+    system_settings_entity_to_model,
+    system_settings_model_to_entity,
     user_entity_to_model,
     user_model_to_entity,
 )
@@ -287,3 +291,31 @@ class SqlAlchemyPaymentEventRepository:
             select(PaymentEventModel).where(PaymentEventModel.processed.is_(False))
         )
         return [payment_event_model_to_entity(m) for m in result.scalars().all()]
+
+
+class SqlAlchemySystemSettingsRepository:
+    """Singleton system settings row (id=1)."""
+
+    _SINGLETON_ID = 1
+
+    def __init__(self, session: AsyncSession, identity_map: IdentityMap) -> None:
+        self._session = session
+        self._identity_map = identity_map  # unused — singleton uses int PK
+
+    async def get(self) -> SystemSettings:
+        result = await self._session.execute(
+            select(SystemSettingsModel).where(SystemSettingsModel.id == self._SINGLETON_ID)
+        )
+        model = result.scalar_one_or_none()
+        if model is None:
+            model = SystemSettingsModel(id=self._SINGLETON_ID, maintenance_mode=False)
+            self._session.add(model)
+            await self._session.flush()
+
+        return system_settings_model_to_entity(model)
+
+    async def set_maintenance_mode(self, enabled: bool) -> SystemSettings:
+        settings = await self.get()
+        settings.maintenance_mode = enabled
+        await self._session.merge(system_settings_entity_to_model(settings))
+        return settings

@@ -6,12 +6,14 @@ from dishka import make_async_container
 from dishka.integrations.fastapi import setup_dishka
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from config.ioc.providers import AppProvider
 from config.logging import setup_logging
 from config.settings import settings
 from presentation.api.v1.exceptions import register_exception_handlers
 from presentation.api.v1.router import router as v1_router
+from presentation.middleware.maintenance import MaintenanceMiddleware
 
 
 @asynccontextmanager
@@ -32,6 +34,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    session_factory = async_sessionmaker(
+        create_async_engine(settings.DATABASE_URL, pool_pre_ping=True),
+        expire_on_commit=False,
+    )
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
@@ -39,6 +46,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(MaintenanceMiddleware, session_factory=session_factory)
 
     container = make_async_container(AppProvider())
     setup_dishka(container, app)

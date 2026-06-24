@@ -15,6 +15,7 @@ from infrastructure.db.repositories import (
     SqlAlchemyRoleRepository,
     SqlAlchemySubscriptionPlanRepository,
     SqlAlchemySubscriptionRepository,
+    SqlAlchemySystemSettingsRepository,
     SqlAlchemyUserRepository,
 )
 
@@ -35,6 +36,7 @@ class SqlAlchemyUnitOfWork:
         self.promocodes = SqlAlchemyPromocodeRepository(session, self._identity_map)
         self.payments = SqlAlchemyPaymentRepository(session, self._identity_map)
         self.payment_events = SqlAlchemyPaymentEventRepository(session, self._identity_map)
+        self.system_settings = SqlAlchemySystemSettingsRepository(session, self._identity_map)
 
     async def __aenter__(self) -> SqlAlchemyUnitOfWork:
         return self

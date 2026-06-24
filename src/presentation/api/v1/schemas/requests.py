@@ -55,3 +55,7 @@ class PaymentCreateRequest(BaseModel):
     idempotency_key: str
 
     model_config = ConfigDict(json_encoders={Decimal: str})
+
+
+class MaintenanceModeUpdateRequest(BaseModel):
+    enabled: bool

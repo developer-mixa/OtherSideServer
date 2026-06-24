@@ -10,6 +10,7 @@ from domain.entities import (
     Role,
     Subscription,
     SubscriptionPlan,
+    SystemSettings,
     User,
 )
 from infrastructure.db.models import (
@@ -20,6 +21,7 @@ from infrastructure.db.models import (
     RoleModel,
     SubscriptionModel,
     SubscriptionPlanModel,
+    SystemSettingsModel,
     UserModel,
 )
 
@@ -156,3 +158,11 @@ def payment_event_entity_to_model(entity: PaymentEvent) -> PaymentEventModel:
         processed=entity.processed,
         created_at=entity.created_at,
     )
+
+
+def system_settings_model_to_entity(model: SystemSettingsModel) -> SystemSettings:
+    return SystemSettings(id=model.id, maintenance_mode=model.maintenance_mode)
+
+
+def system_settings_entity_to_model(entity: SystemSettings) -> SystemSettingsModel:
+    return SystemSettingsModel(id=entity.id, maintenance_mode=entity.maintenance_mode)

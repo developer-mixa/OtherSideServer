@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, Date, ForeignKey, Numeric, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, Date, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -116,6 +116,14 @@ class PaymentModel(Base):
     user: Mapped[UserModel] = relationship(back_populates="payments")
     plan: Mapped[SubscriptionPlanModel] = relationship(back_populates="payments")
     events: Mapped[list[PaymentEventModel]] = relationship(back_populates="payment")
+
+
+class SystemSettingsModel(Base):
+    __tablename__ = "system_settings"
+    __table_args__ = (CheckConstraint("id = 1", name="system_settings_singleton"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    maintenance_mode: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class PaymentEventModel(Base):

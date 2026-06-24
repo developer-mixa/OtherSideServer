@@ -8,6 +8,7 @@ from presentation.api.v1.endpoints import (
     payments,
     promocodes,
     roles,
+    settings,
     subscription_plans,
     subscriptions,
 )
@@ -15,6 +16,7 @@ from presentation.api.v1.endpoints import (
 router = APIRouter(prefix="/api/v1")
 
 router.include_router(auth.router)
+router.include_router(settings.router)
 router.include_router(roles.router)
 router.include_router(company_games.router)
 router.include_router(subscription_plans.router)
