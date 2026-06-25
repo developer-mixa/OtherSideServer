@@ -47,8 +47,10 @@ class SubscriptionPlanResponse(BaseModel):
     id: UUID
     type: str
     game_id: UUID | None = None
+    price_amount: Decimal = Decimal("0.00")
+    is_active: bool = True
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, json_encoders={Decimal: str})
 
 
 class SubscriptionResponse(BaseModel):
@@ -56,6 +58,7 @@ class SubscriptionResponse(BaseModel):
     user_id: UUID
     plan_id: UUID | None
     active_until: date | None
+    source_payment_id: UUID | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -81,7 +84,17 @@ class PaymentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, json_encoders={Decimal: str})
+
+
+class PaymentInitResponse(BaseModel):
+    payment_id: UUID
+    payment_url: str
+    robokassa_invoice_id: str
+    amount: Decimal
+    status: str
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
 
 
 class MaintenanceModeResponse(BaseModel):

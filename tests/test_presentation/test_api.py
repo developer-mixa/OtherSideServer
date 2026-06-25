@@ -117,24 +117,34 @@ class TestPromocodesEndpoints:
 
 
 class TestPaymentsEndpoints:
-    async def test_create_payment(self, client: AsyncClient, fake_uow: FakeUnitOfWork) -> None:
-        user = User.create("payuser", "pay@example.com", "hash")
-        plan = SubscriptionPlan.create("monthly")
-        fake_uow._store.users[user.id] = user
+    async def test_initiate_payment(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, auth_headers: dict[str, str]
+    ) -> None:
+        from decimal import Decimal
+
+        plan = SubscriptionPlan.create("remove_ad", price_amount=Decimal("499.00"))
         fake_uow._store.subscription_plans[plan.id] = plan
         response = await client.post(
-            "/api/v1/payments",
+            "/api/v1/payments/init",
+            headers=auth_headers,
             json={
-                "user_id": str(user.id),
                 "plan_id": str(plan.id),
-                "amount": "99.99",
-                "status": "pending",
-                "robokassa_invoice_id": "inv-123",
-                "idempotency_key": "idem-123",
+                "idempotency_key": "idem-init-123",
             },
         )
         assert response.status_code == 201
-        assert response.json()["amount"] == "99.99"
+        body = response.json()
+        assert body["status"] == "pending"
+        assert body["amount"] == "499.00"
+        assert "payment_url" in body
+        assert "robokassa_invoice_id" in body
+
+    async def test_initiate_payment_requires_auth(self, client: AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/payments/init",
+            json={"plan_id": str(uuid4()), "idempotency_key": "idem-no-auth"},
+        )
+        assert response.status_code == 401
 
     async def test_list_my_payments(
         self, client: AsyncClient, auth_headers: dict[str, str]

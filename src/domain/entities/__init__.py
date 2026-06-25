@@ -61,15 +61,28 @@ class SubscriptionPlan:
     id: UUID
     type: str
     game_id: UUID | None = None
+    price_amount: Decimal = Decimal("0.00")
+    is_active: bool = True
 
     @classmethod
     def create(
         cls,
         plan_type: str,
         game_id: UUID | None = None,
+        price_amount: Decimal = Decimal("0.00"),
+        is_active: bool = True,
         entity_id: UUID | None = None,
     ) -> SubscriptionPlan:
-        return cls(id=entity_id or uuid4(), type=plan_type, game_id=game_id)
+        return cls(
+            id=entity_id or uuid4(),
+            type=plan_type,
+            game_id=game_id,
+            price_amount=price_amount,
+            is_active=is_active,
+        )
+
+    def is_remove_ad(self) -> bool:
+        return self.type.lower() == "remove_ad"
 
 
 @dataclass
@@ -78,6 +91,7 @@ class Subscription:
     user_id: UUID
     plan_id: UUID | None = None
     active_until: date | None = None
+    source_payment_id: UUID | None = None
 
     @classmethod
     def create(
@@ -85,6 +99,7 @@ class Subscription:
         user_id: UUID,
         plan_id: UUID | None = None,
         active_until: date | None = None,
+        source_payment_id: UUID | None = None,
         entity_id: UUID | None = None,
     ) -> Subscription:
         return cls(
@@ -92,11 +107,18 @@ class Subscription:
             user_id=user_id,
             plan_id=plan_id,
             active_until=active_until,
+            source_payment_id=source_payment_id,
         )
+
+    def is_permanent(self) -> bool:
+        """Permanent (const) subscription — active_until is NULL."""
+        return self.active_until is None
 
     def is_active(self, on_date: date | None = None) -> bool:
         check_date = on_date or date.today()
-        return self.active_until is not None and self.active_until >= check_date
+        if self.active_until is None:
+            return True
+        return self.active_until >= check_date
 
 
 @dataclass
@@ -134,6 +156,12 @@ class Payment:
     created_at: datetime
     updated_at: datetime
     paid_at: datetime | None = None
+
+    def mark_paid(self, paid_at: datetime) -> None:
+        """Transition payment to paid status."""
+        self.status = "paid"
+        self.paid_at = paid_at
+        self.updated_at = paid_at
 
     @classmethod
     def create(

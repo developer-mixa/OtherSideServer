@@ -33,6 +33,11 @@ from application.mappers import (
     subscription_to_dto,
     user_to_dto,
 )
+from application.use_cases.payments import (
+    GetPaymentUseCase,
+    InitiatePaymentUseCase,
+    ProcessRobokassaWebhookUseCase,
+)
 from config.security import create_access_token, hash_password, verify_password
 from config.settings import is_admin_role
 from domain.entities import (
@@ -197,7 +202,12 @@ class CreateSubscriptionPlanUseCase:
                 game = await self._uow.company_games.get_by_id(dto.game_id)
                 if game is None:
                     raise EntityNotFoundError("CompanyGame", dto.game_id)
-            plan = SubscriptionPlan.create(dto.type, dto.game_id)
+            plan = SubscriptionPlan.create(
+                dto.type,
+                dto.game_id,
+                price_amount=dto.price_amount,
+                is_active=dto.is_active,
+            )
             await self._uow.subscription_plans.add(plan)
             await self._uow.commit()
             return subscription_plan_to_dto(plan)

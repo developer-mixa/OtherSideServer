@@ -43,7 +43,13 @@ def company_game_to_dto(entity: CompanyGame) -> CompanyGameDTO:
 
 
 def subscription_plan_to_dto(entity: SubscriptionPlan) -> SubscriptionPlanDTO:
-    return SubscriptionPlanDTO(id=entity.id, type=entity.type, game_id=entity.game_id)
+    return SubscriptionPlanDTO(
+        id=entity.id,
+        type=entity.type,
+        game_id=entity.game_id,
+        price_amount=entity.price_amount,
+        is_active=entity.is_active,
+    )
 
 
 def subscription_to_dto(entity: Subscription) -> SubscriptionDTO:
@@ -52,6 +58,7 @@ def subscription_to_dto(entity: Subscription) -> SubscriptionDTO:
         user_id=entity.user_id,
         plan_id=entity.plan_id,
         active_until=entity.active_until,
+        source_payment_id=entity.source_payment_id,
     )
 
 

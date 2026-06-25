@@ -28,6 +28,11 @@ async def create_plan(
     body: SubscriptionPlanCreateRequest,
     use_case: FromDishka[CreateSubscriptionPlanUseCase],
 ) -> SubscriptionPlanResponse:
-    dto = SubscriptionPlanCreateDTO(type=body.type, game_id=body.game_id)
+    dto = SubscriptionPlanCreateDTO(
+        type=body.type,
+        game_id=body.game_id,
+        price_amount=body.price_amount,
+        is_active=body.is_active,
+    )
     result = await use_case.execute(dto)
     return subscription_plan_dto_to_response(result)

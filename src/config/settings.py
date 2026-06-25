@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = ["*"]
     ADMIN_ROLE_IDS: list[str] = []
 
+    ROBOKASSA_MERCHANT_LOGIN: str = ""
+    ROBOKASSA_PASSWORD1: str = ""
+    ROBOKASSA_PASSWORD2: str = ""
+    ROBOKASSA_IS_TEST: bool = True
+    ROBOKASSA_PAYMENT_URL: str = "https://auth.robokassa.ru/Merchant/Index.aspx"
+
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
     @field_validator("ADMIN_ROLE_IDS", mode="before")

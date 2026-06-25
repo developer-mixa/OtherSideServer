@@ -65,11 +65,23 @@ def company_game_entity_to_model(entity: CompanyGame) -> CompanyGameModel:
 
 
 def subscription_plan_model_to_entity(model: SubscriptionPlanModel) -> SubscriptionPlan:
-    return SubscriptionPlan(id=model.id, type=model.type, game_id=model.game_id)
+    return SubscriptionPlan(
+        id=model.id,
+        type=model.type,
+        game_id=model.game_id,
+        price_amount=model.price_amount,
+        is_active=model.is_active,
+    )
 
 
 def subscription_plan_entity_to_model(entity: SubscriptionPlan) -> SubscriptionPlanModel:
-    return SubscriptionPlanModel(id=entity.id, type=entity.type, game_id=entity.game_id)
+    return SubscriptionPlanModel(
+        id=entity.id,
+        type=entity.type,
+        game_id=entity.game_id,
+        price_amount=entity.price_amount,
+        is_active=entity.is_active,
+    )
 
 
 def subscription_model_to_entity(model: SubscriptionModel) -> Subscription:
@@ -78,6 +90,7 @@ def subscription_model_to_entity(model: SubscriptionModel) -> Subscription:
         user_id=model.user_id,
         plan_id=model.plan_id,
         active_until=model.active_until,
+        source_payment_id=model.source_payment_id,
     )
 
 
@@ -87,6 +100,7 @@ def subscription_entity_to_model(entity: Subscription) -> SubscriptionModel:
         user_id=entity.user_id,
         plan_id=entity.plan_id,
         active_until=entity.active_until,
+        source_payment_id=entity.source_payment_id,
     )
 
 

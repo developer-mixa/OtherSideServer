@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS company_games (
 CREATE TABLE IF NOT EXISTS subscription_plans (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     game_id UUID REFERENCES company_games(id) ON DELETE SET NULL,
-    type VARCHAR NOT NULL
+    type VARCHAR NOT NULL,
+    price_amount DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    is_active BOOLEAN NOT NULL DEFAULT true
 );
 
 CREATE TABLE IF NOT EXISTS subscriptions (
@@ -44,13 +46,20 @@ CREATE TABLE IF NOT EXISTS payments (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     plan_id UUID NOT NULL REFERENCES subscription_plans(id) ON DELETE CASCADE,
     amount DECIMAL(10, 2) NOT NULL,
-    status VARCHAR NOT NULL,
+    status VARCHAR NOT NULL CHECK (status IN ('pending', 'paid', 'failed', 'cancelled')),
     robokassa_invoice_id VARCHAR UNIQUE NOT NULL,
     idempotency_key VARCHAR UNIQUE NOT NULL,
     paid_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS source_payment_id UUID REFERENCES payments(id) ON DELETE SET NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_subscriptions_permanent_user_plan
+    ON subscriptions (user_id, plan_id)
+    WHERE active_until IS NULL AND plan_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS payment_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

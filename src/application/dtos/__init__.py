@@ -53,12 +53,16 @@ class SubscriptionPlanDTO:
     id: UUID
     type: str
     game_id: UUID | None = None
+    price_amount: Decimal = Decimal("0.00")
+    is_active: bool = True
 
 
 @dataclass(slots=True)
 class SubscriptionPlanCreateDTO:
     type: str
     game_id: UUID | None = None
+    price_amount: Decimal = Decimal("0.00")
+    is_active: bool = True
 
 
 @dataclass(slots=True)
@@ -67,6 +71,7 @@ class SubscriptionDTO:
     user_id: UUID
     plan_id: UUID | None
     active_until: date | None
+    source_payment_id: UUID | None = None
 
 
 @dataclass(slots=True)
@@ -113,6 +118,21 @@ class PaymentCreateDTO:
     status: str
     robokassa_invoice_id: str
     idempotency_key: str
+
+
+@dataclass(slots=True)
+class PaymentInitDTO:
+    plan_id: UUID
+    idempotency_key: str
+
+
+@dataclass(slots=True)
+class PaymentInitResultDTO:
+    payment_id: UUID
+    payment_url: str
+    robokassa_invoice_id: str
+    amount: Decimal
+    status: str
 
 
 @dataclass(slots=True)

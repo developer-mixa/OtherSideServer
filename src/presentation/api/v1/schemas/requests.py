@@ -32,6 +32,10 @@ class CompanyGameCreateRequest(BaseModel):
 class SubscriptionPlanCreateRequest(BaseModel):
     type: str = Field(min_length=1, max_length=64)
     game_id: UUID | None = None
+    price_amount: Decimal = Field(default=Decimal("0.00"), ge=0, decimal_places=2)
+    is_active: bool = True
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
 
 
 class SubscriptionCreateRequest(BaseModel):
@@ -46,15 +50,9 @@ class PromocodeCreateRequest(BaseModel):
     is_active: bool = True
 
 
-class PaymentCreateRequest(BaseModel):
-    user_id: UUID
+class PaymentInitRequest(BaseModel):
     plan_id: UUID
-    amount: Decimal = Field(gt=0, decimal_places=2)
-    status: str = Field(min_length=1, max_length=32)
-    robokassa_invoice_id: str
-    idempotency_key: str
-
-    model_config = ConfigDict(json_encoders={Decimal: str})
+    idempotency_key: str = Field(min_length=8, max_length=128)
 
 
 class MaintenanceModeUpdateRequest(BaseModel):

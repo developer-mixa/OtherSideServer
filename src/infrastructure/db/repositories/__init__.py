@@ -200,6 +200,19 @@ class SqlAlchemySubscriptionRepository:
         )
         return [subscription_model_to_entity(m) for m in result.scalars().all()]
 
+    async def get_permanent_by_user_and_plan(
+        self, user_id: UUID, plan_id: UUID
+    ) -> Subscription | None:
+        result = await self._session.execute(
+            select(SubscriptionModel).where(
+                SubscriptionModel.user_id == user_id,
+                SubscriptionModel.plan_id == plan_id,
+                SubscriptionModel.active_until.is_(None),
+            )
+        )
+        model = result.scalar_one_or_none()
+        return subscription_model_to_entity(model) if model else None
+
     async def add(self, entity: Subscription) -> Subscription:
         self._identity_map.register(entity, EntityState.NEW)
         self._session.add(subscription_entity_to_model(entity))
@@ -264,6 +277,13 @@ class SqlAlchemyPaymentRepository:
         model = result.scalar_one_or_none()
         return payment_model_to_entity(model) if model else None
 
+    async def get_by_robokassa_invoice_id(self, invoice_id: str) -> Payment | None:
+        result = await self._session.execute(
+            select(PaymentModel).where(PaymentModel.robokassa_invoice_id == invoice_id)
+        )
+        model = result.scalar_one_or_none()
+        return payment_model_to_entity(model) if model else None
+
     async def list_by_user(self, user_id: UUID) -> list[Payment]:
         result = await self._session.execute(
             select(PaymentModel).where(PaymentModel.user_id == user_id)
@@ -273,6 +293,14 @@ class SqlAlchemyPaymentRepository:
     async def add(self, entity: Payment) -> Payment:
         self._identity_map.register(entity, EntityState.NEW)
         self._session.add(payment_entity_to_model(entity))
+        return entity
+
+    async def update(self, entity: Payment) -> Payment:
+        tracked = self._identity_map.get(Payment, entity.id)
+        if tracked is None:
+            tracked = self._identity_map.register(entity, EntityState.CLEAN)
+        tracked.mark_dirty()
+        await self._session.merge(payment_entity_to_model(entity))
         return entity
 
 
@@ -291,6 +319,13 @@ class SqlAlchemyPaymentEventRepository:
             select(PaymentEventModel).where(PaymentEventModel.processed.is_(False))
         )
         return [payment_event_model_to_entity(m) for m in result.scalars().all()]
+
+    async def mark_processed(self, event_id: UUID) -> None:
+        await self._session.execute(
+            PaymentEventModel.__table__.update()
+            .where(PaymentEventModel.id == event_id)
+            .values(processed=True)
+        )
 
 
 class SqlAlchemySystemSettingsRepository:

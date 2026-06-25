@@ -15,6 +15,8 @@ from application.use_cases import (
     DeleteCompanyGameUseCase,
     GetCurrentUserUseCase,
     GetMaintenanceModeUseCase,
+    GetPaymentUseCase,
+    InitiatePaymentUseCase,
     ListCompanyGamesUseCase,
     ListPaymentsUseCase,
     ListPromocodesUseCase,
@@ -22,11 +24,13 @@ from application.use_cases import (
     ListSubscriptionPlansUseCase,
     ListSubscriptionsUseCase,
     LoginUserUseCase,
+    ProcessRobokassaWebhookUseCase,
     RegisterUserUseCase,
     SetMaintenanceModeUseCase,
 )
 from config.settings import settings
 from infrastructure.db.unit_of_work import SqlAlchemyUnitOfWork
+from infrastructure.payments.robokassa import RobokassaClient
 
 
 class AppProvider(Provider):
@@ -111,6 +115,32 @@ class AppProvider(Provider):
     @provide(scope=Scope.REQUEST)
     def create_payment(self, uow: SqlAlchemyUnitOfWork) -> CreatePaymentUseCase:
         return CreatePaymentUseCase(uow)
+
+    @provide(scope=Scope.APP)
+    def robokassa_client(self) -> RobokassaClient:
+        return RobokassaClient(
+            merchant_login=settings.ROBOKASSA_MERCHANT_LOGIN,
+            password1=settings.ROBOKASSA_PASSWORD1,
+            password2=settings.ROBOKASSA_PASSWORD2,
+            is_test=settings.ROBOKASSA_IS_TEST,
+            payment_base_url=settings.ROBOKASSA_PAYMENT_URL,
+        )
+
+    @provide(scope=Scope.REQUEST)
+    def initiate_payment(
+        self, uow: SqlAlchemyUnitOfWork, robokassa: RobokassaClient
+    ) -> InitiatePaymentUseCase:
+        return InitiatePaymentUseCase(uow, robokassa)
+
+    @provide(scope=Scope.REQUEST)
+    def get_payment(self, uow: SqlAlchemyUnitOfWork) -> GetPaymentUseCase:
+        return GetPaymentUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def process_robokassa_webhook(
+        self, uow: SqlAlchemyUnitOfWork, robokassa: RobokassaClient
+    ) -> ProcessRobokassaWebhookUseCase:
+        return ProcessRobokassaWebhookUseCase(uow, robokassa)
 
     @provide(scope=Scope.REQUEST)
     def get_maintenance_mode(self, uow: SqlAlchemyUnitOfWork) -> GetMaintenanceModeUseCase:

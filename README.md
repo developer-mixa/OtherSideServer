@@ -77,7 +77,9 @@ make dev       # start uvicorn with hot reload
 | GET/POST | `/subscriptions` | No | User subscriptions |
 | GET/POST | `/promocodes` | No | Promocodes |
 | GET | `/payments/me` | Yes | User payments |
-| POST | `/payments` | No | Create payment |
+| `POST` | `/payments/init` | Yes | Initiate Robokassa payment |
+| `GET` | `/payments/{id}` | Yes | Payment status |
+| `POST` | `/payments/robokassa/result` | No | Robokassa webhook |
 
 ## Environment Variables
 
@@ -91,6 +93,11 @@ make dev       # start uvicorn with hot reload
 | `JWT_ALG` | HS256 | JWT algorithm |
 | `DATABASE_URL` | — | Async PostgreSQL URL (`postgresql+asyncpg://...`) |
 | `CORS_ORIGINS` | `["*"]` | Allowed CORS origins |
+| `ROBOKASSA_MERCHANT_LOGIN` | — | Robokassa merchant login |
+| `ROBOKASSA_PASSWORD1` | — | Password #1 (payment URL signature) |
+| `ROBOKASSA_PASSWORD2` | — | Password #2 (Result URL verification) |
+| `ROBOKASSA_IS_TEST` | true | Test mode flag |
+| `ROBOKASSA_PAYMENT_URL` | auth.robokassa.ru | Payment page base URL |
 
 ## Database Schema
 
