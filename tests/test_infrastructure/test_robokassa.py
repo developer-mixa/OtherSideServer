@@ -53,3 +53,8 @@ class TestRobokassaClient:
 
     def test_format_result_response(self, robokassa: RobokassaClient) -> None:
         assert robokassa.format_result_response("1001") == "OK1001"
+
+    def test_amounts_equal_tolerates_format_differences(self) -> None:
+        assert RobokassaClient.amounts_equal(Decimal("499.00"), "499")
+        assert RobokassaClient.amounts_equal(Decimal("499"), "499.00")
+        assert not RobokassaClient.amounts_equal(Decimal("499.00"), "500")

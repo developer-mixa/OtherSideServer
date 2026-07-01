@@ -27,6 +27,7 @@ BYPASS_PATHS = frozenset({
     "/api/openapi.json",
     "/api/v1/auth/login",
     "/api/v1/settings/maintenance",
+    "/api/v1/payments/robokassa/result",
 })
 
 MAINTENANCE_MESSAGE = "Service is temporarily unavailable due to scheduled maintenance"
@@ -80,7 +81,7 @@ class MaintenanceMiddleware(BaseHTTPMiddleware):
                 return enabled
         except Exception:
             logger.exception("Failed to read maintenance mode from database")
-            return False
+            return True
 
     async def _is_admin_request(self, request: Request) -> bool:
         auth_header = request.headers.get("Authorization", "")

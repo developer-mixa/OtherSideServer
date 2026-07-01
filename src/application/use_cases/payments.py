@@ -190,8 +190,7 @@ class ProcessRobokassaWebhookUseCase:
                 await self._uow.commit()
                 raise ValidationError(f"Payment cannot be fulfilled in status={payment.status}")
 
-            expected_amount = RobokassaClient.format_amount(payment.amount)
-            if out_sum != expected_amount:
+            if not RobokassaClient.amounts_equal(payment.amount, out_sum):
                 await self._uow.commit()
                 raise PaymentVerificationError("Payment amount mismatch")
 

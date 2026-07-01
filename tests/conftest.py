@@ -441,6 +441,30 @@ def auth_headers(sample_user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def make_admin_user(store: InMemoryStore) -> User:
+    """Create an admin user in the in-memory test store."""
+    admin_role = next(role for role in store.roles.values() if role.role == "admin")
+    user = User.create(
+        username="adminuser",
+        email="admin@example.com",
+        password_hash=hash_password("password123"),
+        role_id=admin_role.id,
+    )
+    store.users[user.id] = user
+    return user
+
+
+@pytest.fixture
+def admin_user(fake_store: InMemoryStore) -> User:
+    return make_admin_user(fake_store)
+
+
+@pytest.fixture
+def admin_headers(admin_user: User) -> dict[str, str]:
+    token = create_access_token({"sub": str(admin_user.id)})
+    return {"Authorization": f"Bearer {token}"}
+
+
 @pytest.fixture
 async def db_session() -> AsyncIterator[AsyncSession]:
     """SQLite session for infrastructure integration tests."""

@@ -71,11 +71,13 @@ make dev       # start uvicorn with hot reload
 | POST | `/auth/register` | No | Register user |
 | POST | `/auth/login` | No | Get JWT token |
 | GET | `/auth/me` | Yes | Current user |
-| GET/POST | `/roles` | No | List/create roles |
-| GET/POST/DELETE | `/games` | No | Company games CRUD |
-| GET/POST | `/plans` | No | Subscription plans |
-| GET/POST | `/subscriptions` | No | User subscriptions |
-| GET/POST | `/promocodes` | No | Promocodes |
+| GET/POST | `/roles` | Admin | List/create roles |
+| GET/POST/DELETE | `/games` | Admin | Company games CRUD |
+| GET | `/plans` | No | List subscription plans |
+| POST | `/plans` | Admin | Create subscription plans |
+| GET | `/subscriptions` | Yes | Own subscriptions (admin: all or filter by user) |
+| POST | `/subscriptions` | Admin | Manual subscription grant |
+| GET/POST | `/promocodes` | Admin | Promocodes |
 | GET | `/payments/me` | Yes | User payments |
 | `POST` | `/payments/init` | Yes | Initiate Robokassa payment |
 | `GET` | `/payments/{id}` | Yes | Payment status |

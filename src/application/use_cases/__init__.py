@@ -6,6 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
+from application.auth import USER_ROLE_NAME, require_admin, user_is_admin
 from application.dtos import (
     AuthTokenDTO,
     CompanyGameCreateDTO,
@@ -38,7 +39,6 @@ from application.use_cases.payments import (
     InitiatePaymentUseCase,
     ProcessRobokassaWebhookUseCase,
 )
-from application.auth import USER_ROLE_NAME, require_admin
 from application.users import build_user_dto
 from config.security import create_access_token, hash_password, verify_password
 from domain.entities import (
@@ -52,8 +52,10 @@ from domain.entities import (
 )
 from domain.exceptions import (
     AuthenticationError,
+    AuthorizationError,
     DuplicateEntityError,
     EntityNotFoundError,
+    ValidationError,
 )
 from domain.value_objects import Email, Password, Username
 from infrastructure.cache.maintenance_cache import MaintenanceModeCache
@@ -127,8 +129,9 @@ class ListRolesUseCase:
     def __init__(self, uow: UnitOfWorkProtocol) -> None:
         self._uow = uow
 
-    async def execute(self) -> list[RoleDTO]:
+    async def execute(self, actor_id: UUID) -> list[RoleDTO]:
         async with self._uow:
+            await require_admin(self._uow, actor_id)
             roles = await self._uow.roles.list_all()
             return [role_to_dto(r) for r in roles]
 
@@ -137,8 +140,9 @@ class CreateRoleUseCase:
     def __init__(self, uow: UnitOfWorkProtocol) -> None:
         self._uow = uow
 
-    async def execute(self, role_name: str) -> RoleDTO:
+    async def execute(self, actor_id: UUID, role_name: str) -> RoleDTO:
         async with self._uow:
+            await require_admin(self._uow, actor_id)
             existing = await self._uow.roles.get_by_name(role_name)
             if existing:
                 raise DuplicateEntityError("Role", "role", role_name)
@@ -152,8 +156,9 @@ class ListCompanyGamesUseCase:
     def __init__(self, uow: UnitOfWorkProtocol) -> None:
         self._uow = uow
 
-    async def execute(self) -> list[CompanyGameDTO]:
+    async def execute(self, actor_id: UUID) -> list[CompanyGameDTO]:
         async with self._uow:
+            await require_admin(self._uow, actor_id)
             games = await self._uow.company_games.list_all()
             return [company_game_to_dto(g) for g in games]
 
@@ -162,8 +167,9 @@ class CreateCompanyGameUseCase:
     def __init__(self, uow: UnitOfWorkProtocol) -> None:
         self._uow = uow
 
-    async def execute(self, dto: CompanyGameCreateDTO) -> CompanyGameDTO:
+    async def execute(self, actor_id: UUID, dto: CompanyGameCreateDTO) -> CompanyGameDTO:
         async with self._uow:
+            await require_admin(self._uow, actor_id)
             existing = await self._uow.company_games.get_by_name(dto.game)
             if existing:
                 raise DuplicateEntityError("CompanyGame", "game", dto.game)
@@ -177,8 +183,9 @@ class DeleteCompanyGameUseCase:
     def __init__(self, uow: UnitOfWorkProtocol) -> None:
         self._uow = uow
 
-    async def execute(self, game_id: UUID) -> None:
+    async def execute(self, actor_id: UUID, game_id: UUID) -> None:
         async with self._uow:
+            await require_admin(self._uow, actor_id)
             game = await self._uow.company_games.get_by_id(game_id)
             if game is None:
                 raise EntityNotFoundError("CompanyGame", game_id)
@@ -200,8 +207,9 @@ class CreateSubscriptionPlanUseCase:
     def __init__(self, uow: UnitOfWorkProtocol) -> None:
         self._uow = uow
 
-    async def execute(self, dto: SubscriptionPlanCreateDTO) -> SubscriptionPlanDTO:
+    async def execute(self, actor_id: UUID, dto: SubscriptionPlanCreateDTO) -> SubscriptionPlanDTO:
         async with self._uow:
+            await require_admin(self._uow, actor_id)
             if dto.game_id:
                 game = await self._uow.company_games.get_by_id(dto.game_id)
                 if game is None:
@@ -221,14 +229,28 @@ class ListSubscriptionsUseCase:
     def __init__(self, uow: UnitOfWorkProtocol) -> None:
         self._uow = uow
 
-    async def execute(self, user_id: UUID | None = None) -> list[SubscriptionDTO]:
+    async def execute(
+        self,
+        actor_id: UUID,
+        user_id: UUID | None = None,
+    ) -> list[SubscriptionDTO]:
         async with self._uow:
-            if user_id:
-                subs = await self._uow.subscriptions.get_by_user(user_id)
+            actor = await self._uow.users.get_by_id(actor_id)
+            if actor is None:
+                raise EntityNotFoundError("User", actor_id)
+
+            is_admin = await user_is_admin(self._uow, actor)
+            if is_admin:
+                if user_id:
+                    subs = await self._uow.subscriptions.get_by_user(user_id)
+                else:
+                    subs = []
+                    for user in await self._uow.users.list_all():
+                        subs.extend(await self._uow.subscriptions.get_by_user(user.id))
             else:
-                subs = []
-                for user in await self._uow.users.list_all():
-                    subs.extend(await self._uow.subscriptions.get_by_user(user.id))
+                if user_id is not None and user_id != actor_id:
+                    raise AuthorizationError()
+                subs = await self._uow.subscriptions.get_by_user(actor_id)
             return [subscription_to_dto(s) for s in subs]
 
 
@@ -236,8 +258,9 @@ class CreateSubscriptionUseCase:
     def __init__(self, uow: UnitOfWorkProtocol) -> None:
         self._uow = uow
 
-    async def execute(self, dto: SubscriptionCreateDTO) -> SubscriptionDTO:
+    async def execute(self, actor_id: UUID, dto: SubscriptionCreateDTO) -> SubscriptionDTO:
         async with self._uow:
+            await require_admin(self._uow, actor_id)
             user = await self._uow.users.get_by_id(dto.user_id)
             if user is None:
                 raise EntityNotFoundError("User", dto.user_id)
@@ -259,8 +282,9 @@ class ListPromocodesUseCase:
     def __init__(self, uow: UnitOfWorkProtocol) -> None:
         self._uow = uow
 
-    async def execute(self) -> list[PromocodeDTO]:
+    async def execute(self, actor_id: UUID) -> list[PromocodeDTO]:
         async with self._uow:
+            await require_admin(self._uow, actor_id)
             codes = await self._uow.promocodes.list_all()
             return [promocode_to_dto(c) for c in codes]
 
@@ -269,8 +293,9 @@ class CreatePromocodeUseCase:
     def __init__(self, uow: UnitOfWorkProtocol) -> None:
         self._uow = uow
 
-    async def execute(self, dto: PromocodeCreateDTO) -> PromocodeDTO:
+    async def execute(self, actor_id: UUID, dto: PromocodeCreateDTO) -> PromocodeDTO:
         async with self._uow:
+            await require_admin(self._uow, actor_id)
             plan = await self._uow.subscription_plans.get_by_id(dto.plan_id)
             if plan is None:
                 raise EntityNotFoundError("SubscriptionPlan", dto.plan_id)
@@ -310,11 +335,14 @@ class CreatePaymentUseCase:
             if plan is None:
                 raise EntityNotFoundError("SubscriptionPlan", dto.plan_id)
 
+            if dto.status != "pending":
+                raise ValidationError("Only pending payments can be created")
+
             payment = Payment.create(
                 user_id=dto.user_id,
                 plan_id=dto.plan_id,
                 amount=dto.amount,
-                status=dto.status,
+                status="pending",
                 robokassa_invoice_id=dto.robokassa_invoice_id,
                 idempotency_key=dto.idempotency_key,
                 now=datetime.utcnow(),

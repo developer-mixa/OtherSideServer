@@ -90,5 +90,13 @@ class RobokassaClient:
         return format(normalized, "f")
 
     @staticmethod
+    def amounts_equal(stored: Decimal, received: str) -> bool:
+        """Compare callback OutSum with stored amount, tolerating format differences."""
+        try:
+            return Decimal(received).quantize(Decimal("0.01")) == stored.quantize(Decimal("0.01"))
+        except Exception:
+            return False
+
+    @staticmethod
     def _md5(value: str) -> str:
         return hashlib.md5(value.encode("utf-8")).hexdigest()

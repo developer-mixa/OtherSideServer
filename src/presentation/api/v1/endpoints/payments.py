@@ -16,7 +16,7 @@ from application.use_cases import (
     ProcessRobokassaWebhookUseCase,
 )
 from config.deps import bearer_scheme, resolve_user_id
-from domain.exceptions import PaymentVerificationError
+from domain.exceptions import EntityNotFoundError, PaymentVerificationError, ValidationError
 from presentation.api.v1.mappers import payment_dto_to_response
 from presentation.api.v1.schemas.requests import PaymentInitRequest
 from presentation.api.v1.schemas.responses import PaymentInitResponse, PaymentResponse
@@ -79,5 +79,5 @@ async def robokassa_result(
     try:
         body = await use_case.execute(payload)
         return Response(content=body, media_type="text/plain")
-    except PaymentVerificationError as exc:
-        return Response(content=exc.message, status_code=status.HTTP_400_BAD_REQUEST)
+    except (PaymentVerificationError, EntityNotFoundError, ValidationError) as exc:
+        return Response(content=exc.message, status_code=status.HTTP_400_BAD_REQUEST, media_type="text/plain")
