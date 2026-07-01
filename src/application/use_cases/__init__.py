@@ -38,8 +38,9 @@ from application.use_cases.payments import (
     InitiatePaymentUseCase,
     ProcessRobokassaWebhookUseCase,
 )
+from application.auth import USER_ROLE_NAME, require_admin
+from application.users import build_user_dto
 from config.security import create_access_token, hash_password, verify_password
-from config.settings import is_admin_role
 from domain.entities import (
     CompanyGame,
     Payment,
@@ -51,7 +52,6 @@ from domain.entities import (
 )
 from domain.exceptions import (
     AuthenticationError,
-    AuthorizationError,
     DuplicateEntityError,
     EntityNotFoundError,
 )
@@ -76,15 +76,19 @@ class RegisterUserUseCase:
             if await self._uow.users.get_by_username(username.value):
                 raise DuplicateEntityError("User", "username", username.value)
 
+            default_role = await self._uow.roles.get_by_name(USER_ROLE_NAME)
+            if default_role is None:
+                raise EntityNotFoundError("Role", USER_ROLE_NAME)
+
             user = User.create(
                 username=username.value,
                 email=email.value,
                 password_hash=hash_password(dto.password),
-                role_id=dto.role_id,
+                role_id=default_role.id,
             )
             await self._uow.users.add(user)
             await self._uow.commit()
-            return user_to_dto(user)
+            return await build_user_dto(self._uow, user)
 
 
 class LoginUserUseCase:
@@ -116,7 +120,7 @@ class GetCurrentUserUseCase:
             user = await self._uow.users.get_by_id(user_id)
             if user is None:
                 raise EntityNotFoundError("User", user_id)
-            return user_to_dto(user)
+            return await build_user_dto(self._uow, user)
 
 
 class ListRolesUseCase:
@@ -341,11 +345,7 @@ class SetMaintenanceModeUseCase:
 
     async def execute(self, user_id: UUID, enabled: bool) -> MaintenanceModeDTO:
         async with self._uow:
-            user = await self._uow.users.get_by_id(user_id)
-            if user is None:
-                raise EntityNotFoundError("User", user_id)
-            if not is_admin_role(user.role_id):
-                raise AuthorizationError()
+            await require_admin(self._uow, user_id)
 
             await self._uow.system_settings.set_maintenance_mode(enabled)
             await self._uow.commit()

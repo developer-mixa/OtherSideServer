@@ -27,6 +27,7 @@ class UserResponse(BaseModel):
     email: str
     is_verified: bool
     role_id: UUID | None = None
+    is_admin: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -99,3 +100,39 @@ class PaymentInitResponse(BaseModel):
 
 class MaintenanceModeResponse(BaseModel):
     enabled: bool
+
+
+class ContactSubmissionResponse(BaseModel):
+    id: UUID
+    name: str
+    phone: str
+    email: str
+    message: str | None
+    consent_personal_data: bool
+    consent_privacy: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RoadmapTaskResponse(BaseModel):
+    id: UUID
+    title: str
+    description: str | None
+    status: str
+    sort_order: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LandingSettingsResponse(BaseModel):
+    countdown_title: str
+    release_date: date
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class LandingPublicResponse(BaseModel):
+    countdown_title: str
+    release_date: date
+    tasks: list[RoadmapTaskResponse]

@@ -68,6 +68,11 @@ class InMemoryStore:
         self.payments: dict[UUID, Payment] = {}
         self.system_settings = SystemSettings(maintenance_mode=False)
 
+        user_role = Role.create("user")
+        admin_role = Role.create("admin")
+        self.roles[user_role.id] = user_role
+        self.roles[admin_role.id] = admin_role
+
 
 class FakeRoleRepo:
     def __init__(self, store: InMemoryStore) -> None:
@@ -106,6 +111,9 @@ class FakeUserRepo:
 
     async def list_all(self) -> list[User]:
         return list(self._store.users.values())
+
+    async def exists_with_role_id(self, role_id: UUID) -> bool:
+        return any(user.role_id == role_id for user in self._store.users.values())
 
 
 class FakeCompanyGameRepo:

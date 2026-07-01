@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from application.dtos import (
     CompanyGameDTO,
+    ContactSubmissionDTO,
+    LandingSettingsDTO,
     PaymentDTO,
     PaymentEventDTO,
     PromocodeDTO,
+    RoadmapTaskDTO,
     RoleDTO,
     SubscriptionDTO,
     SubscriptionPlanDTO,
@@ -14,9 +17,12 @@ from application.dtos import (
 )
 from domain.entities import (
     CompanyGame,
+    ContactSubmission,
+    LandingSettings,
     Payment,
     PaymentEvent,
     PromocodeEntity,
+    RoadmapTask,
     Role,
     Subscription,
     SubscriptionPlan,
@@ -94,4 +100,34 @@ def payment_event_to_dto(entity: PaymentEvent) -> PaymentEventDTO:
         payload=entity.payload,
         processed=entity.processed,
         created_at=entity.created_at,
+    )
+
+
+def contact_submission_to_dto(entity: ContactSubmission) -> ContactSubmissionDTO:
+    return ContactSubmissionDTO(
+        id=entity.id,
+        name=entity.name,
+        phone=entity.phone,
+        email=entity.email,
+        message=entity.message,
+        consent_personal_data=entity.consent_personal_data,
+        consent_privacy=entity.consent_privacy,
+        created_at=entity.created_at,
+    )
+
+
+def landing_settings_to_dto(entity: LandingSettings) -> LandingSettingsDTO:
+    return LandingSettingsDTO(
+        countdown_title=entity.countdown_title,
+        release_date=entity.release_date,
+    )
+
+
+def roadmap_task_to_dto(entity: RoadmapTask) -> RoadmapTaskDTO:
+    return RoadmapTaskDTO(
+        id=entity.id,
+        title=entity.title,
+        description=entity.description,
+        status=entity.status,
+        sort_order=entity.sort_order,
     )

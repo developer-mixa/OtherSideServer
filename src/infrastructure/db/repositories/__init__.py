@@ -10,9 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from application.unit_of_work import EntityState, IdentityMap
 from domain.entities import (
     CompanyGame,
+    ContactSubmission,
+    LandingSettings,
     Payment,
     PaymentEvent,
     PromocodeEntity,
+    RoadmapTask,
     Role,
     Subscription,
     SubscriptionPlan,
@@ -21,9 +24,12 @@ from domain.entities import (
 )
 from infrastructure.db.models import (
     CompanyGameModel,
+    ContactSubmissionModel,
+    LandingSettingsModel,
     PaymentEventModel,
     PaymentModel,
     PromocodeModel,
+    RoadmapTaskModel,
     RoleModel,
     SubscriptionModel,
     SubscriptionPlanModel,
@@ -33,12 +39,18 @@ from infrastructure.db.models import (
 from infrastructure.mappers import (
     company_game_entity_to_model,
     company_game_model_to_entity,
+    contact_submission_entity_to_model,
+    contact_submission_model_to_entity,
+    landing_settings_entity_to_model,
+    landing_settings_model_to_entity,
     payment_entity_to_model,
     payment_event_entity_to_model,
     payment_event_model_to_entity,
     payment_model_to_entity,
     promocode_entity_to_model,
     promocode_model_to_entity,
+    roadmap_task_entity_to_model,
+    roadmap_task_model_to_entity,
     role_entity_to_model,
     role_model_to_entity,
     subscription_entity_to_model,
@@ -121,6 +133,12 @@ class SqlAlchemyUserRepository:
     async def list_all(self) -> list[User]:
         result = await self._session.execute(select(UserModel))
         return [user_model_to_entity(m) for m in result.scalars().all()]
+
+    async def exists_with_role_id(self, role_id: UUID) -> bool:
+        result = await self._session.execute(
+            select(UserModel.id).where(UserModel.role_id == role_id).limit(1)
+        )
+        return result.scalar_one_or_none() is not None
 
 
 class SqlAlchemyCompanyGameRepository:
@@ -354,3 +372,91 @@ class SqlAlchemySystemSettingsRepository:
         settings.maintenance_mode = enabled
         await self._session.merge(system_settings_entity_to_model(settings))
         return settings
+
+
+class SqlAlchemyContactSubmissionRepository:
+    def __init__(self, session: AsyncSession, identity_map: IdentityMap) -> None:
+        self._session = session
+        self._identity_map = identity_map
+
+    async def add(self, entity: ContactSubmission) -> ContactSubmission:
+        self._identity_map.register(entity, EntityState.NEW)
+        self._session.add(contact_submission_entity_to_model(entity))
+        return entity
+
+    async def list_all(self) -> list[ContactSubmission]:
+        result = await self._session.execute(
+            select(ContactSubmissionModel).order_by(ContactSubmissionModel.created_at.desc())
+        )
+        return [contact_submission_model_to_entity(model) for model in result.scalars().all()]
+
+
+class SqlAlchemyLandingSettingsRepository:
+    _SINGLETON_ID = 1
+
+    def __init__(self, session: AsyncSession, identity_map: IdentityMap) -> None:
+        self._session = session
+        self._identity_map = identity_map
+
+    async def get(self) -> LandingSettings:
+        result = await self._session.execute(
+            select(LandingSettingsModel).where(LandingSettingsModel.id == self._SINGLETON_ID)
+        )
+        model = result.scalar_one_or_none()
+        if model is None:
+            from datetime import date
+
+            model = LandingSettingsModel(
+                id=self._SINGLETON_ID,
+                countdown_title="До релиза",
+                release_date=date(2026, 8, 1),
+            )
+            self._session.add(model)
+            await self._session.flush()
+        return landing_settings_model_to_entity(model)
+
+    async def update(self, countdown_title: str, release_date) -> LandingSettings:
+        settings = await self.get()
+        settings.countdown_title = countdown_title
+        settings.release_date = release_date
+        await self._session.merge(landing_settings_entity_to_model(settings))
+        return settings
+
+
+class SqlAlchemyRoadmapTaskRepository:
+    def __init__(self, session: AsyncSession, identity_map: IdentityMap) -> None:
+        self._session = session
+        self._identity_map = identity_map
+
+    async def get_by_id(self, task_id: UUID) -> RoadmapTask | None:
+        tracked = self._identity_map.get(RoadmapTask, task_id)
+        if tracked and tracked.state != EntityState.DELETED:
+            return tracked.entity
+        result = await self._session.execute(
+            select(RoadmapTaskModel).where(RoadmapTaskModel.id == task_id)
+        )
+        model = result.scalar_one_or_none()
+        if model is None:
+            return None
+        entity = roadmap_task_model_to_entity(model)
+        self._identity_map.register(entity, EntityState.CLEAN)
+        return entity
+
+    async def list_all(self) -> list[RoadmapTask]:
+        result = await self._session.execute(
+            select(RoadmapTaskModel).order_by(RoadmapTaskModel.sort_order.asc())
+        )
+        return [roadmap_task_model_to_entity(model) for model in result.scalars().all()]
+
+    async def add(self, entity: RoadmapTask) -> RoadmapTask:
+        self._identity_map.register(entity, EntityState.NEW)
+        self._session.add(roadmap_task_entity_to_model(entity))
+        return entity
+
+    async def update(self, entity: RoadmapTask) -> RoadmapTask:
+        self._identity_map.register(entity, EntityState.DIRTY)
+        await self._session.merge(roadmap_task_entity_to_model(entity))
+        return entity
+
+    async def delete(self, task_id: UUID) -> None:
+        await self._session.execute(delete(RoadmapTaskModel).where(RoadmapTaskModel.id == task_id))

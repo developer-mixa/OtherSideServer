@@ -9,9 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from application.unit_of_work import IdentityMap
 from infrastructure.db.repositories import (
     SqlAlchemyCompanyGameRepository,
+    SqlAlchemyContactSubmissionRepository,
+    SqlAlchemyLandingSettingsRepository,
     SqlAlchemyPaymentEventRepository,
     SqlAlchemyPaymentRepository,
     SqlAlchemyPromocodeRepository,
+    SqlAlchemyRoadmapTaskRepository,
     SqlAlchemyRoleRepository,
     SqlAlchemySubscriptionPlanRepository,
     SqlAlchemySubscriptionRepository,
@@ -37,6 +40,9 @@ class SqlAlchemyUnitOfWork:
         self.payments = SqlAlchemyPaymentRepository(session, self._identity_map)
         self.payment_events = SqlAlchemyPaymentEventRepository(session, self._identity_map)
         self.system_settings = SqlAlchemySystemSettingsRepository(session, self._identity_map)
+        self.contact_submissions = SqlAlchemyContactSubmissionRepository(session, self._identity_map)
+        self.landing_settings = SqlAlchemyLandingSettingsRepository(session, self._identity_map)
+        self.roadmap_tasks = SqlAlchemyRoadmapTaskRepository(session, self._identity_map)
 
     async def __aenter__(self) -> SqlAlchemyUnitOfWork:
         return self

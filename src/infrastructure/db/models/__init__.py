@@ -137,6 +137,44 @@ class SystemSettingsModel(Base):
     maintenance_mode: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
+class ContactSubmissionModel(Base):
+    __tablename__ = "contact_submissions"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    phone: Mapped[str] = mapped_column(String, nullable=False)
+    email: Mapped[str] = mapped_column(String, nullable=False)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    consent_personal_data: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    consent_privacy: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
+
+
+class LandingSettingsModel(Base):
+    __tablename__ = "landing_settings"
+    __table_args__ = (CheckConstraint("id = 1", name="landing_settings_singleton"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    countdown_title: Mapped[str] = mapped_column(String, nullable=False, default="До релиза")
+    release_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+
+class RoadmapTaskModel(Base):
+    __tablename__ = "roadmap_tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'in_progress', 'completed')",
+            name="roadmap_tasks_status_check",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 class PaymentEventModel(Base):
     __tablename__ = "payment_events"
 

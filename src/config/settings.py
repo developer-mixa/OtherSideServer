@@ -1,8 +1,8 @@
 """Application settings — single source of truth."""
 
-from uuid import UUID
+from __future__ import annotations
 
-from pydantic import field_validator
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,7 +17,10 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/app"
     CORS_ORIGINS: list[str] = ["*"]
-    ADMIN_ROLE_IDS: list[str] = []
+
+    BOOTSTRAP_ADMIN_USERNAME: str = ""
+    BOOTSTRAP_ADMIN_EMAIL: str = ""
+    BOOTSTRAP_ADMIN_PASSWORD: str = ""
 
     ROBOKASSA_MERCHANT_LOGIN: str = ""
     ROBOKASSA_PASSWORD1: str = ""
@@ -25,25 +28,25 @@ class Settings(BaseSettings):
     ROBOKASSA_IS_TEST: bool = True
     ROBOKASSA_PAYMENT_URL: str = "https://auth.robokassa.ru/Merchant/Index.aspx"
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
-    @field_validator("ADMIN_ROLE_IDS", mode="before")
-    @classmethod
-    def _parse_admin_role_ids(cls, value: object) -> list[str]:
-        if value is None or value == "":
-            return []
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        if isinstance(value, list):
-            return [str(item) for item in value]
-        return []
+    @property
+    def bootstrap_admin_configured(self) -> bool:
+        return bool(
+            self.BOOTSTRAP_ADMIN_USERNAME.strip()
+            and self.BOOTSTRAP_ADMIN_EMAIL.strip()
+            and self.BOOTSTRAP_ADMIN_PASSWORD
+        )
+
+    @model_validator(mode="after")
+    def validate_bootstrap_credentials(self) -> Settings:
+        if not self.bootstrap_admin_configured:
+            return self
+
+        if len(self.BOOTSTRAP_ADMIN_PASSWORD) < 12:
+            raise ValueError("BOOTSTRAP_ADMIN_PASSWORD must be at least 12 characters")
+
+        return self
 
 
 settings = Settings()
-
-
-def is_admin_role(role_id: UUID | None) -> bool:
-    """Check whether role_id belongs to configured admin roles."""
-    if role_id is None or not settings.ADMIN_ROLE_IDS:
-        return False
-    return str(role_id) in settings.ADMIN_ROLE_IDS

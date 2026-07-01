@@ -48,6 +48,15 @@ class TestRegisterUserUseCase:
         result = await use_case.execute(dto)
         assert result.username == "newuser"
         assert result.email == "new@example.com"
+        assert result.is_admin is False
+
+    async def test_register_always_assigns_user_role(self, uow: FakeUnitOfWork) -> None:
+        use_case = RegisterUserUseCase(uow)
+        dto = UserCreateDTO(username="plainuser", email="plain@example.com", password="password123")
+        result = await use_case.execute(dto)
+        user_role = await uow.roles.get_by_name("user")
+        assert user_role is not None
+        assert result.role_id == user_role.id
 
     async def test_register_duplicate_email(self, uow: FakeUnitOfWork) -> None:
         user = User.create("existing", "dup@example.com", "hash")
@@ -88,10 +97,10 @@ class TestGetCurrentUserUseCase:
 
 class TestRoleUseCases:
     async def test_create_and_list_roles(self, uow: FakeUnitOfWork) -> None:
-        created = await CreateRoleUseCase(uow).execute("admin")
+        created = await CreateRoleUseCase(uow).execute("moderator")
         roles = await ListRolesUseCase(uow).execute()
-        assert created.role == "admin"
-        assert len(roles) == 1
+        assert created.role == "moderator"
+        assert any(role.role == "moderator" for role in roles)
 
     async def test_create_duplicate_role(self, uow: FakeUnitOfWork) -> None:
         uow._store.roles[uuid4()] = Role.create("admin")

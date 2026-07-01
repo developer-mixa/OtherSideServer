@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from application.bootstrap import bootstrap_admin_user
 from config.ioc.providers import AppProvider
 from config.logging import setup_logging
 from config.settings import settings
@@ -19,6 +20,11 @@ from presentation.middleware.maintenance import MaintenanceMiddleware
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
+    session_factory = async_sessionmaker(
+        create_async_engine(settings.DATABASE_URL, pool_pre_ping=True),
+        expire_on_commit=False,
+    )
+    await bootstrap_admin_user(session_factory)
     yield
     await app.state.dishka_container.close()
 

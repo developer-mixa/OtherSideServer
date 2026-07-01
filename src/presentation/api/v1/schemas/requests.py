@@ -13,7 +13,6 @@ class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=32)
     email: EmailStr
     password: str = Field(min_length=8)
-    role_id: UUID | None = None
 
 
 class LoginRequest(BaseModel):
@@ -57,3 +56,30 @@ class PaymentInitRequest(BaseModel):
 
 class MaintenanceModeUpdateRequest(BaseModel):
     enabled: bool
+
+
+class ContactSubmitRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    phone: str = Field(min_length=5, max_length=32)
+    email: EmailStr
+    message: str | None = Field(default=None, max_length=2000)
+    consent_personal_data: bool
+    consent_privacy: bool
+
+
+class LandingSettingsUpdateRequest(BaseModel):
+    countdown_title: str = Field(min_length=1, max_length=128)
+    release_date: date
+
+
+class RoadmapTaskCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=500)
+    status: str = Field(default="pending", pattern="^(pending|in_progress|completed)$")
+
+
+class RoadmapTaskUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=500)
+    status: str | None = Field(default=None, pattern="^(pending|in_progress|completed)$")
+    sort_order: int | None = Field(default=None, ge=0)

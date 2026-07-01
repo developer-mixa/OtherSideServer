@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Protocol
 from uuid import UUID
 
@@ -22,9 +23,12 @@ from application.dtos import (
 )
 from domain.entities import (
     CompanyGame,
+    ContactSubmission,
+    LandingSettings,
     Payment,
     PaymentEvent,
     PromocodeEntity,
+    RoadmapTask,
     Role,
     Subscription,
     SubscriptionPlan,
@@ -46,6 +50,7 @@ class UserRepositoryProtocol(Protocol):
     async def get_by_username(self, username: str) -> User | None: ...
     async def add(self, entity: User) -> User: ...
     async def list_all(self) -> list[User]: ...
+    async def exists_with_role_id(self, role_id: UUID) -> bool: ...
 
 
 class CompanyGameRepositoryProtocol(Protocol):
@@ -101,6 +106,24 @@ class SystemSettingsRepositoryProtocol(Protocol):
     async def set_maintenance_mode(self, enabled: bool) -> SystemSettings: ...
 
 
+class ContactSubmissionRepositoryProtocol(Protocol):
+    async def add(self, entity: ContactSubmission) -> ContactSubmission: ...
+    async def list_all(self) -> list[ContactSubmission]: ...
+
+
+class LandingSettingsRepositoryProtocol(Protocol):
+    async def get(self) -> LandingSettings: ...
+    async def update(self, countdown_title: str, release_date: date) -> LandingSettings: ...
+
+
+class RoadmapTaskRepositoryProtocol(Protocol):
+    async def get_by_id(self, task_id: UUID) -> RoadmapTask | None: ...
+    async def list_all(self) -> list[RoadmapTask]: ...
+    async def add(self, entity: RoadmapTask) -> RoadmapTask: ...
+    async def update(self, entity: RoadmapTask) -> RoadmapTask: ...
+    async def delete(self, task_id: UUID) -> None: ...
+
+
 class UnitOfWorkProtocol(Protocol):
     roles: RoleRepositoryProtocol
     users: UserRepositoryProtocol
@@ -111,6 +134,9 @@ class UnitOfWorkProtocol(Protocol):
     payments: PaymentRepositoryProtocol
     payment_events: PaymentEventRepositoryProtocol
     system_settings: SystemSettingsRepositoryProtocol
+    contact_submissions: ContactSubmissionRepositoryProtocol
+    landing_settings: LandingSettingsRepositoryProtocol
+    roadmap_tasks: RoadmapTaskRepositoryProtocol
 
     async def __aenter__(self) -> UnitOfWorkProtocol: ...
     async def __aexit__(

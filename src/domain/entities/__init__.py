@@ -196,6 +196,72 @@ class SystemSettings:
 
 
 @dataclass
+class ContactSubmission:
+    id: UUID
+    name: str
+    phone: str
+    email: str
+    message: str | None
+    consent_personal_data: bool
+    consent_privacy: bool
+    created_at: datetime = field(default_factory=datetime.utcnow)
+
+    @classmethod
+    def create(
+        cls,
+        name: str,
+        phone: str,
+        email: str,
+        message: str | None,
+        consent_personal_data: bool,
+        consent_privacy: bool,
+        entity_id: UUID | None = None,
+    ) -> ContactSubmission:
+        return cls(
+            id=entity_id or uuid4(),
+            name=name,
+            phone=phone,
+            email=email,
+            message=message,
+            consent_personal_data=consent_personal_data,
+            consent_privacy=consent_privacy,
+        )
+
+
+@dataclass
+class LandingSettings:
+    countdown_title: str = "До релиза"
+    release_date: date = field(default_factory=lambda: date(2026, 8, 1))
+    id: int = 1
+
+
+@dataclass
+class RoadmapTask:
+    id: UUID
+    title: str
+    description: str | None
+    status: str
+    sort_order: int
+
+    @classmethod
+    def create(
+        cls,
+        title: str,
+        description: str | None = None,
+        status: str = "pending",
+        sort_order: int = 0,
+        entity_id: UUID | None = None,
+    ) -> RoadmapTask:
+        return cls(
+            id=entity_id or uuid4(),
+            title=title,
+            description=description,
+            status=status,
+            sort_order=sort_order,
+        )
+
+
+@dataclass
 class PaymentEvent:
     id: UUID
     payment_id: UUID | None

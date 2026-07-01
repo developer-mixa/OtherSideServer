@@ -28,6 +28,16 @@ from application.use_cases import (
     RegisterUserUseCase,
     SetMaintenanceModeUseCase,
 )
+from application.use_cases.contact import ListContactSubmissionsUseCase, SubmitContactUseCase
+from application.use_cases.landing import (
+    CreateRoadmapTaskUseCase,
+    DeleteRoadmapTaskUseCase,
+    GetLandingPublicUseCase,
+    GetLandingSettingsUseCase,
+    ListRoadmapTasksUseCase,
+    UpdateLandingSettingsUseCase,
+    UpdateRoadmapTaskUseCase,
+)
 from config.settings import settings
 from infrastructure.db.unit_of_work import SqlAlchemyUnitOfWork
 from infrastructure.payments.robokassa import RobokassaClient
@@ -149,3 +159,39 @@ class AppProvider(Provider):
     @provide(scope=Scope.REQUEST)
     def set_maintenance_mode(self, uow: SqlAlchemyUnitOfWork) -> SetMaintenanceModeUseCase:
         return SetMaintenanceModeUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def submit_contact(self, uow: SqlAlchemyUnitOfWork) -> SubmitContactUseCase:
+        return SubmitContactUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def list_contact_submissions(self, uow: SqlAlchemyUnitOfWork) -> ListContactSubmissionsUseCase:
+        return ListContactSubmissionsUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def get_landing_public(self, uow: SqlAlchemyUnitOfWork) -> GetLandingPublicUseCase:
+        return GetLandingPublicUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def get_landing_settings(self, uow: SqlAlchemyUnitOfWork) -> GetLandingSettingsUseCase:
+        return GetLandingSettingsUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def update_landing_settings(self, uow: SqlAlchemyUnitOfWork) -> UpdateLandingSettingsUseCase:
+        return UpdateLandingSettingsUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def list_roadmap_tasks(self, uow: SqlAlchemyUnitOfWork) -> ListRoadmapTasksUseCase:
+        return ListRoadmapTasksUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def create_roadmap_task(self, uow: SqlAlchemyUnitOfWork) -> CreateRoadmapTaskUseCase:
+        return CreateRoadmapTaskUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def update_roadmap_task(self, uow: SqlAlchemyUnitOfWork) -> UpdateRoadmapTaskUseCase:
+        return UpdateRoadmapTaskUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def delete_roadmap_task(self, uow: SqlAlchemyUnitOfWork) -> DeleteRoadmapTaskUseCase:
+        return DeleteRoadmapTaskUseCase(uow)
