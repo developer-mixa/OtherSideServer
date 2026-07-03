@@ -1,11 +1,15 @@
 """Subscription plans endpoints."""
 
+from typing import Annotated
+
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, status
+from fastapi.security import HTTPAuthorizationCredentials
 
 from application.dtos import SubscriptionPlanCreateDTO
 from application.use_cases import CreateSubscriptionPlanUseCase, ListSubscriptionPlansUseCase
+from config.deps import bearer_scheme, resolve_user_id
 from presentation.api.v1.mappers import subscription_plan_dto_to_response
 from presentation.api.v1.schemas.requests import SubscriptionPlanCreateRequest
 from presentation.api.v1.schemas.responses import SubscriptionPlanResponse
@@ -26,8 +30,15 @@ async def list_plans(
 @inject
 async def create_plan(
     body: SubscriptionPlanCreateRequest,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     use_case: FromDishka[CreateSubscriptionPlanUseCase],
 ) -> SubscriptionPlanResponse:
-    dto = SubscriptionPlanCreateDTO(type=body.type, game_id=body.game_id)
-    result = await use_case.execute(dto)
+    actor_id = resolve_user_id(credentials)
+    dto = SubscriptionPlanCreateDTO(
+        type=body.type,
+        game_id=body.game_id,
+        price_amount=body.price_amount,
+        is_active=body.is_active,
+    )
+    result = await use_case.execute(actor_id, dto)
     return subscription_plan_dto_to_response(result)

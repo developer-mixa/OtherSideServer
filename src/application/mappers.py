@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from application.dtos import (
     CompanyGameDTO,
+    ContactSubmissionDTO,
+    LandingSettingsDTO,
     PaymentDTO,
     PaymentEventDTO,
     PromocodeDTO,
+    RoadmapTaskDTO,
     RoleDTO,
     SubscriptionDTO,
     SubscriptionPlanDTO,
@@ -14,9 +17,12 @@ from application.dtos import (
 )
 from domain.entities import (
     CompanyGame,
+    ContactSubmission,
+    LandingSettings,
     Payment,
     PaymentEvent,
     PromocodeEntity,
+    RoadmapTask,
     Role,
     Subscription,
     SubscriptionPlan,
@@ -43,7 +49,13 @@ def company_game_to_dto(entity: CompanyGame) -> CompanyGameDTO:
 
 
 def subscription_plan_to_dto(entity: SubscriptionPlan) -> SubscriptionPlanDTO:
-    return SubscriptionPlanDTO(id=entity.id, type=entity.type, game_id=entity.game_id)
+    return SubscriptionPlanDTO(
+        id=entity.id,
+        type=entity.type,
+        game_id=entity.game_id,
+        price_amount=entity.price_amount,
+        is_active=entity.is_active,
+    )
 
 
 def subscription_to_dto(entity: Subscription) -> SubscriptionDTO:
@@ -52,6 +64,7 @@ def subscription_to_dto(entity: Subscription) -> SubscriptionDTO:
         user_id=entity.user_id,
         plan_id=entity.plan_id,
         active_until=entity.active_until,
+        source_payment_id=entity.source_payment_id,
     )
 
 
@@ -87,4 +100,34 @@ def payment_event_to_dto(entity: PaymentEvent) -> PaymentEventDTO:
         payload=entity.payload,
         processed=entity.processed,
         created_at=entity.created_at,
+    )
+
+
+def contact_submission_to_dto(entity: ContactSubmission) -> ContactSubmissionDTO:
+    return ContactSubmissionDTO(
+        id=entity.id,
+        name=entity.name,
+        phone=entity.phone,
+        email=entity.email,
+        message=entity.message,
+        consent_personal_data=entity.consent_personal_data,
+        consent_privacy=entity.consent_privacy,
+        created_at=entity.created_at,
+    )
+
+
+def landing_settings_to_dto(entity: LandingSettings) -> LandingSettingsDTO:
+    return LandingSettingsDTO(
+        countdown_title=entity.countdown_title,
+        release_date=entity.release_date,
+    )
+
+
+def roadmap_task_to_dto(entity: RoadmapTask) -> RoadmapTaskDTO:
+    return RoadmapTaskDTO(
+        id=entity.id,
+        title=entity.title,
+        description=entity.description,
+        status=entity.status,
+        sort_order=entity.sort_order,
     )

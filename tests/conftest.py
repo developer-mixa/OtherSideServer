@@ -21,6 +21,8 @@ from application.use_cases import (
     DeleteCompanyGameUseCase,
     GetCurrentUserUseCase,
     GetMaintenanceModeUseCase,
+    GetPaymentUseCase,
+    InitiatePaymentUseCase,
     ListCompanyGamesUseCase,
     ListPaymentsUseCase,
     ListPromocodesUseCase,
@@ -28,9 +30,12 @@ from application.use_cases import (
     ListSubscriptionPlansUseCase,
     ListSubscriptionsUseCase,
     LoginUserUseCase,
+    ProcessRobokassaWebhookUseCase,
     RegisterUserUseCase,
     SetMaintenanceModeUseCase,
 )
+from config.settings import settings
+from infrastructure.payments.robokassa import RobokassaClient
 from config.security import create_access_token, hash_password
 from domain.entities import (
     CompanyGame,
@@ -62,6 +67,11 @@ class InMemoryStore:
         self.promocodes: dict[UUID, PromocodeEntity] = {}
         self.payments: dict[UUID, Payment] = {}
         self.system_settings = SystemSettings(maintenance_mode=False)
+
+        user_role = Role.create("user")
+        admin_role = Role.create("admin")
+        self.roles[user_role.id] = user_role
+        self.roles[admin_role.id] = admin_role
 
 
 class FakeRoleRepo:
@@ -101,6 +111,9 @@ class FakeUserRepo:
 
     async def list_all(self) -> list[User]:
         return list(self._store.users.values())
+
+    async def exists_with_role_id(self, role_id: UUID) -> bool:
+        return any(user.role_id == role_id for user in self._store.users.values())
 
 
 class FakeCompanyGameRepo:
@@ -152,6 +165,18 @@ class FakeSubscriptionRepo:
     async def get_by_user(self, user_id: UUID) -> list[Subscription]:
         return [s for s in self._store.subscriptions.values() if s.user_id == user_id]
 
+    async def get_permanent_by_user_and_plan(
+        self, user_id: UUID, plan_id: UUID
+    ) -> Subscription | None:
+        return next(
+            (
+                s
+                for s in self._store.subscriptions.values()
+                if s.user_id == user_id and s.plan_id == plan_id and s.active_until is None
+            ),
+            None,
+        )
+
     async def add(self, entity: Subscription) -> Subscription:
         self._store.subscriptions[entity.id] = entity
         return entity
@@ -197,6 +222,12 @@ class FakePaymentRepo:
             None,
         )
 
+    async def get_by_robokassa_invoice_id(self, invoice_id: str) -> Payment | None:
+        return next(
+            (p for p in self._store.payments.values() if p.robokassa_invoice_id == invoice_id),
+            None,
+        )
+
     async def list_by_user(self, user_id: UUID) -> list[Payment]:
         return [p for p in self._store.payments.values() if p.user_id == user_id]
 
@@ -204,13 +235,26 @@ class FakePaymentRepo:
         self._store.payments[entity.id] = entity
         return entity
 
+    async def update(self, entity: Payment) -> Payment:
+        self._store.payments[entity.id] = entity
+        return entity
+
 
 class FakePaymentEventRepo:
+    def __init__(self) -> None:
+        self.events: list = []
+
     async def add(self, entity):  # noqa: ANN001, ANN201
+        self.events.append(entity)
         return entity
 
     async def list_unprocessed(self) -> list:
-        return []
+        return [event for event in self.events if not event.processed]
+
+    async def mark_processed(self, event_id: UUID) -> None:
+        for event in self.events:
+            if event.id == event_id:
+                event.processed = True
 
 
 class FakeSystemSettingsRepo:
@@ -259,6 +303,12 @@ class TestProvider(Provider):
     def __init__(self, uow: FakeUnitOfWork) -> None:
         super().__init__()
         self._uow = uow
+        self._robokassa = RobokassaClient(
+            merchant_login=settings.ROBOKASSA_MERCHANT_LOGIN or "test_merchant",
+            password1=settings.ROBOKASSA_PASSWORD1 or "password1",
+            password2=settings.ROBOKASSA_PASSWORD2 or "password2",
+            is_test=True,
+        )
 
     @provide(scope=Scope.REQUEST)
     def unit_of_work(self) -> FakeUnitOfWork:
@@ -329,6 +379,18 @@ class TestProvider(Provider):
         return CreatePaymentUseCase(self._uow)
 
     @provide(scope=Scope.REQUEST)
+    def initiate_payment(self) -> InitiatePaymentUseCase:
+        return InitiatePaymentUseCase(self._uow, self._robokassa)
+
+    @provide(scope=Scope.REQUEST)
+    def get_payment(self) -> GetPaymentUseCase:
+        return GetPaymentUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def process_robokassa_webhook(self) -> ProcessRobokassaWebhookUseCase:
+        return ProcessRobokassaWebhookUseCase(self._uow, self._robokassa)
+
+    @provide(scope=Scope.REQUEST)
     def get_maintenance_mode(self) -> GetMaintenanceModeUseCase:
         return GetMaintenanceModeUseCase(self._uow)
 
@@ -376,6 +438,30 @@ def sample_user(fake_store: InMemoryStore) -> User:
 @pytest.fixture
 def auth_headers(sample_user: User) -> dict[str, str]:
     token = create_access_token({"sub": str(sample_user.id)})
+    return {"Authorization": f"Bearer {token}"}
+
+
+def make_admin_user(store: InMemoryStore) -> User:
+    """Create an admin user in the in-memory test store."""
+    admin_role = next(role for role in store.roles.values() if role.role == "admin")
+    user = User.create(
+        username="adminuser",
+        email="admin@example.com",
+        password_hash=hash_password("password123"),
+        role_id=admin_role.id,
+    )
+    store.users[user.id] = user
+    return user
+
+
+@pytest.fixture
+def admin_user(fake_store: InMemoryStore) -> User:
+    return make_admin_user(fake_store)
+
+
+@pytest.fixture
+def admin_headers(admin_user: User) -> dict[str, str]:
+    token = create_access_token({"sub": str(admin_user.id)})
     return {"Authorization": f"Bearer {token}"}
 
 

@@ -11,10 +11,10 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from application.auth import ADMIN_ROLE_NAME
 from config.security import get_user_id_from_token
-from config.settings import is_admin_role
 from domain.exceptions import AuthenticationError
-from infrastructure.db.models import SystemSettingsModel, UserModel
+from infrastructure.db.models import RoleModel, SystemSettingsModel, UserModel
 from presentation.api.v1.schemas.responses import ErrorResponse
 from infrastructure.cache.maintenance_cache import MaintenanceModeCache
 
@@ -27,6 +27,7 @@ BYPASS_PATHS = frozenset({
     "/api/openapi.json",
     "/api/v1/auth/login",
     "/api/v1/settings/maintenance",
+    "/api/v1/payments/robokassa/result",
 })
 
 MAINTENANCE_MESSAGE = "Service is temporarily unavailable due to scheduled maintenance"
@@ -80,7 +81,7 @@ class MaintenanceMiddleware(BaseHTTPMiddleware):
                 return enabled
         except Exception:
             logger.exception("Failed to read maintenance mode from database")
-            return False
+            return True
 
     async def _is_admin_request(self, request: Request) -> bool:
         auth_header = request.headers.get("Authorization", "")
@@ -99,10 +100,12 @@ class MaintenanceMiddleware(BaseHTTPMiddleware):
         try:
             async with self._session_factory() as session:
                 result = await session.execute(
-                    select(UserModel.role_id).where(UserModel.id == user_id)
+                    select(RoleModel.role)
+                    .join(UserModel, UserModel.role_id == RoleModel.id)
+                    .where(UserModel.id == user_id)
                 )
-                role_id: UUID | None = result.scalar_one_or_none()
-                return is_admin_role(role_id)
+                role_name: str | None = result.scalar_one_or_none()
+                return role_name == ADMIN_ROLE_NAME
         except Exception:
             logger.exception("Failed to resolve admin role for user_id=%s", user_id)
             return False

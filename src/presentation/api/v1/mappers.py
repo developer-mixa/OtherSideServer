@@ -5,8 +5,12 @@ from __future__ import annotations
 from application.dtos import (
     AuthTokenDTO,
     CompanyGameDTO,
+    ContactSubmissionDTO,
+    LandingPublicDTO,
+    LandingSettingsDTO,
     PaymentDTO,
     PromocodeDTO,
+    RoadmapTaskDTO,
     RoleDTO,
     SubscriptionDTO,
     SubscriptionPlanDTO,
@@ -14,8 +18,12 @@ from application.dtos import (
 )
 from presentation.api.v1.schemas.responses import (
     CompanyGameResponse,
+    ContactSubmissionResponse,
+    LandingPublicResponse,
+    LandingSettingsResponse,
     PaymentResponse,
     PromocodeResponse,
+    RoadmapTaskResponse,
     RoleResponse,
     SubscriptionPlanResponse,
     SubscriptionResponse,
@@ -54,3 +62,23 @@ def promocode_dto_to_response(dto: PromocodeDTO) -> PromocodeResponse:
 
 def payment_dto_to_response(dto: PaymentDTO) -> PaymentResponse:
     return PaymentResponse.model_validate(dto)
+
+
+def contact_submission_dto_to_response(dto: ContactSubmissionDTO) -> ContactSubmissionResponse:
+    return ContactSubmissionResponse.model_validate(dto)
+
+
+def landing_settings_dto_to_response(dto: LandingSettingsDTO) -> LandingSettingsResponse:
+    return LandingSettingsResponse.model_validate(dto)
+
+
+def roadmap_task_dto_to_response(dto: RoadmapTaskDTO) -> RoadmapTaskResponse:
+    return RoadmapTaskResponse.model_validate(dto)
+
+
+def landing_public_dto_to_response(dto: LandingPublicDTO) -> LandingPublicResponse:
+    return LandingPublicResponse(
+        countdown_title=dto.countdown_title,
+        release_date=dto.release_date,
+        tasks=[roadmap_task_dto_to_response(task) for task in dto.tasks],
+    )

@@ -27,7 +27,6 @@ async def register(
         username=body.username,
         email=body.email,
         password=body.password,
-        role_id=body.role_id,
     )
     result = await use_case.execute(dto)
     return user_dto_to_response(result)

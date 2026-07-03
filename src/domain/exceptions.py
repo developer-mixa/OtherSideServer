@@ -49,3 +49,10 @@ class ValidationError(DomainError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
+
+
+class PaymentVerificationError(DomainError):
+    """Raised when Robokassa signature or payment data is invalid."""
+
+    def __init__(self, message: str = "Payment verification failed") -> None:
+        super().__init__(message)

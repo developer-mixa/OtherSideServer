@@ -8,17 +8,25 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from application.bootstrap import bootstrap_admin_user
 from config.ioc.providers import AppProvider
 from config.logging import setup_logging
 from config.settings import settings
 from presentation.api.v1.exceptions import register_exception_handlers
 from presentation.api.v1.router import router as v1_router
 from presentation.middleware.maintenance import MaintenanceMiddleware
+from presentation.middleware.rate_limit import RateLimitMiddleware
+from presentation.middleware.security_headers import SecurityHeadersMiddleware
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
+    session_factory = async_sessionmaker(
+        create_async_engine(settings.DATABASE_URL, pool_pre_ping=True),
+        expire_on_commit=False,
+    )
+    await bootstrap_admin_user(session_factory)
     yield
     await app.state.dishka_container.close()
 
@@ -28,9 +36,9 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
         version="0.1.0",
-        docs_url="/api/docs",
-        redoc_url="/api/redoc",
-        openapi_url="/api/openapi.json",
+        docs_url="/api/docs" if settings.is_local else None,
+        redoc_url="/api/redoc" if settings.is_local else None,
+        openapi_url="/api/openapi.json" if settings.is_local else None,
         lifespan=lifespan,
     )
 
@@ -39,6 +47,8 @@ def create_app() -> FastAPI:
         expire_on_commit=False,
     )
 
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RateLimitMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,

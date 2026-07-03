@@ -433,11 +433,11 @@ nginx: configuration file /etc/nginx/nginx.conf test is successful
 
 ## Часть 6. SSL (Let's Encrypt)
 
-```bash
+```bash https://otherside-inc.ru/
 certbot --nginx \
-  -d otherside.ru \
-  -d www.otherside.ru \
-  -d api.otherside.ru
+  -d otherside-inc.ru \
+  -d www.otherside-inc.ru \
+  -d api.otherside-inc.ru
 ```
 
 - Укажи email

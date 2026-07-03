@@ -49,7 +49,8 @@ class TestSubscription:
 
     def test_is_active_when_no_date(self) -> None:
         sub = Subscription.create(user_id=uuid4())
-        assert sub.is_active() is False
+        assert sub.is_active() is True
+        assert sub.is_permanent() is True
 
 
 class TestPromocode:
