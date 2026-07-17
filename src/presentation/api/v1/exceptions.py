@@ -13,6 +13,7 @@ from domain.exceptions import (
     DomainError,
     DuplicateEntityError,
     EntityNotFoundError,
+    PaymentVerificationError,
     ValidationError,
 )
 from presentation.api.v1.schemas.responses import ErrorResponse
@@ -57,6 +58,15 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content=ErrorResponse(detail=exc.message, code="validation_error").model_dump(),
+        )
+
+    @app.exception_handler(PaymentVerificationError)
+    async def payment_verification_handler(
+        _: Request, exc: PaymentVerificationError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content=ErrorResponse(detail=exc.message, code="payment_verification_error").model_dump(),
         )
 
     @app.exception_handler(DomainError)

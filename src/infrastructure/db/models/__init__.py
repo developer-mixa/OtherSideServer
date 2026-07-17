@@ -57,6 +57,8 @@ class SubscriptionPlanModel(Base):
         PG_UUID(as_uuid=True), ForeignKey("company_games.id", ondelete="SET NULL")
     )
     type: Mapped[str] = mapped_column(String, nullable=False)
+    price_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     game: Mapped[CompanyGameModel | None] = relationship(back_populates="plans")
     subscriptions: Mapped[list[SubscriptionModel]] = relationship(back_populates="plan")
@@ -75,6 +77,9 @@ class SubscriptionModel(Base):
         PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     active_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source_payment_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("payments.id", ondelete="SET NULL")
+    )
 
     plan: Mapped[SubscriptionPlanModel | None] = relationship(back_populates="subscriptions")
     user: Mapped[UserModel] = relationship(back_populates="subscriptions")
@@ -95,6 +100,12 @@ class PromocodeModel(Base):
 
 class PaymentModel(Base):
     __tablename__ = "payments"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'paid', 'failed', 'cancelled')",
+            name="payments_status_check",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     user_id: Mapped[UUID] = mapped_column(
@@ -124,6 +135,44 @@ class SystemSettingsModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     maintenance_mode: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class ContactSubmissionModel(Base):
+    __tablename__ = "contact_submissions"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    phone: Mapped[str] = mapped_column(String, nullable=False)
+    email: Mapped[str] = mapped_column(String, nullable=False)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    consent_personal_data: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    consent_privacy: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now(), nullable=False)
+
+
+class LandingSettingsModel(Base):
+    __tablename__ = "landing_settings"
+    __table_args__ = (CheckConstraint("id = 1", name="landing_settings_singleton"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    countdown_title: Mapped[str] = mapped_column(String, nullable=False, default="До релиза")
+    release_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+
+class RoadmapTaskModel(Base):
+    __tablename__ = "roadmap_tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'in_progress', 'completed')",
+            name="roadmap_tasks_status_check",
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class PaymentEventModel(Base):

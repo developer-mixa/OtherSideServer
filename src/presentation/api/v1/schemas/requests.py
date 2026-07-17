@@ -13,7 +13,6 @@ class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=32)
     email: EmailStr
     password: str = Field(min_length=8)
-    role_id: UUID | None = None
 
 
 class LoginRequest(BaseModel):
@@ -32,6 +31,10 @@ class CompanyGameCreateRequest(BaseModel):
 class SubscriptionPlanCreateRequest(BaseModel):
     type: str = Field(min_length=1, max_length=64)
     game_id: UUID | None = None
+    price_amount: Decimal = Field(default=Decimal("0.00"), ge=0, decimal_places=2)
+    is_active: bool = True
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
 
 
 class SubscriptionCreateRequest(BaseModel):
@@ -46,16 +49,37 @@ class PromocodeCreateRequest(BaseModel):
     is_active: bool = True
 
 
-class PaymentCreateRequest(BaseModel):
-    user_id: UUID
+class PaymentInitRequest(BaseModel):
     plan_id: UUID
-    amount: Decimal = Field(gt=0, decimal_places=2)
-    status: str = Field(min_length=1, max_length=32)
-    robokassa_invoice_id: str
-    idempotency_key: str
-
-    model_config = ConfigDict(json_encoders={Decimal: str})
+    idempotency_key: str = Field(min_length=8, max_length=128)
 
 
 class MaintenanceModeUpdateRequest(BaseModel):
     enabled: bool
+
+
+class ContactSubmitRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    phone: str = Field(min_length=5, max_length=32)
+    email: EmailStr
+    message: str | None = Field(default=None, max_length=2000)
+    consent_personal_data: bool
+    consent_privacy: bool
+
+
+class LandingSettingsUpdateRequest(BaseModel):
+    countdown_title: str = Field(min_length=1, max_length=128)
+    release_date: date
+
+
+class RoadmapTaskCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=500)
+    status: str = Field(default="pending", pattern="^(pending|in_progress|completed)$")
+
+
+class RoadmapTaskUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=500)
+    status: str | None = Field(default=None, pattern="^(pending|in_progress|completed)$")
+    sort_order: int | None = Field(default=None, ge=0)
