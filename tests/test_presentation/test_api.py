@@ -212,6 +212,57 @@ class TestPaymentsEndpoints:
         assert isinstance(response.json(), list)
 
 
+class TestRobokassaResultWebhook:
+    """Robokassa's default merchant config sends the Result URL as a GET request."""
+
+    async def test_result_via_get(self, client: AsyncClient, fake_uow: FakeUnitOfWork) -> None:
+        import hashlib
+        from datetime import datetime
+        from decimal import Decimal
+
+        from config.settings import settings
+        from domain.entities import Payment, SubscriptionPlan, User
+
+        user = User.create("payer", "payer@example.com", "hash")
+        fake_uow._store.users[user.id] = user
+        plan = SubscriptionPlan.create("remove_ad", price_amount=Decimal("499.00"))
+        fake_uow._store.subscription_plans[plan.id] = plan
+        payment = Payment.create(
+            user_id=user.id,
+            plan_id=plan.id,
+            amount=Decimal("499.00"),
+            status="pending",
+            robokassa_invoice_id="777001",
+            idempotency_key="idem-get-webhook",
+            now=datetime.utcnow(),
+        )
+        fake_uow._store.payments[payment.id] = payment
+
+        password2 = settings.ROBOKASSA_PASSWORD2 or "password2"
+        out_sum = "499.00"
+        signature = hashlib.md5(
+            f"{out_sum}:{payment.robokassa_invoice_id}:{password2}".encode()
+        ).hexdigest()
+
+        response = await client.get(
+            "/api/v1/payments/robokassa/result",
+            params={
+                "OutSum": out_sum,
+                "InvId": payment.robokassa_invoice_id,
+                "SignatureValue": signature,
+            },
+        )
+        assert response.status_code == 200
+        assert response.text == f"OK{payment.robokassa_invoice_id}"
+
+    async def test_result_rejects_invalid_signature(self, client: AsyncClient) -> None:
+        response = await client.get(
+            "/api/v1/payments/robokassa/result",
+            params={"OutSum": "499.00", "InvId": "777002", "SignatureValue": "bad"},
+        )
+        assert response.status_code == 400
+
+
 class TestSecurityHeaders:
     async def test_security_headers_present(self, client: AsyncClient) -> None:
         response = await client.get("/health")

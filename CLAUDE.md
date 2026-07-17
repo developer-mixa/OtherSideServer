@@ -2,6 +2,11 @@
 
 FastAPI backend, Clean Architecture, PostgreSQL + SQLAlchemy async, JWT auth, dishka DI.
 
+**Production domain:** `https://otherside-inc.ru` (site) / `https://api.otherside-inc.ru` (API).
+Robokassa merchant tech settings (`Result URL` / `Success URL` / `Fail URL`) must point at these
+hosts — see `src/presentation/api/v1/endpoints/payments.py` for the Result URL webhook and
+`OtherSideFrontend/src/app/(public)/payments/{success,fail}` for the redirect pages.
+
 ## Architecture (strict dependency rule)
 
 ```

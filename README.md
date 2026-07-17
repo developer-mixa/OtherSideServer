@@ -136,6 +136,22 @@ BOOTSTRAP_ADMIN_PASSWORD=your-secure-password-here
 | `BOOTSTRAP_ADMIN_EMAIL` | — | Initial admin email |
 | `BOOTSTRAP_ADMIN_PASSWORD` | — | Initial admin password (min 12 chars) |
 
+## Robokassa merchant setup
+
+In the Robokassa merchant panel (Технические настройки), set:
+
+| Field | Value |
+|-------|-------|
+| Result URL | `https://api.otherside-inc.ru/api/v1/payments/robokassa/result` |
+| Result URL method | GET or POST — both are supported (`payments.robokassa_result`) |
+| Success URL | `https://otherside-inc.ru/payments/success` |
+| Fail URL | `https://otherside-inc.ru/payments/fail` |
+
+Result URL is the authoritative server-to-server callback: it verifies the Password #2 signature
+and fulfills the payment (`ProcessRobokassaWebhookUseCase`). Success/Fail URLs are browser
+redirects only — pure confirmation pages in the frontend (`OtherSideFrontend/src/app/(public)/payments`)
+with no bearing on whether the subscription is actually granted.
+
 ## Database Schema
 
 Source of truth: `db/schema/InitTables.sql`

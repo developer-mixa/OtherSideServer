@@ -68,14 +68,17 @@ async def get_payment(
     return payment_dto_to_response(payment)
 
 
-@router.post("/robokassa/result")
+@router.api_route("/robokassa/result", methods=["GET", "POST"])
 @inject
 async def robokassa_result(
     request: Request,
     use_case: FromDishka[ProcessRobokassaWebhookUseCase],
 ) -> Response:
-    form = await request.form()
-    payload = {key: str(value) for key, value in form.items()}
+    if request.method == "POST":
+        form = await request.form()
+        payload = {key: str(value) for key, value in form.items()}
+    else:
+        payload = dict(request.query_params)
     try:
         body = await use_case.execute(payload)
         return Response(content=body, media_type="text/plain")

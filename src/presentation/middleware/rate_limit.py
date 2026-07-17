@@ -57,7 +57,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         rule = _RATE_LIMIT_RULES.get(request.url.path)
-        if rule is None or request.method != "POST":
+        if rule is None or request.method == "OPTIONS":
             return await call_next(request)
 
         limit, window_seconds = rule
