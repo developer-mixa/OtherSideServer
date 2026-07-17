@@ -4,6 +4,21 @@ Production-ready FastAPI backend with Clean Architecture, PostgreSQL, JWT auth, 
 
 > Backend lives in `OtherSideServer/`. All commands below run from that directory.
 
+## Contents
+
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Makefile Commands](#makefile-commands)
+- [API Endpoints](#api-endpoints-apiv1)
+- [First admin setup](#first-admin-setup)
+  - [Promoting an additional user to admin](#promoting-an-additional-user-to-admin)
+- [Environment Variables](#environment-variables)
+- [Robokassa merchant setup](#robokassa-merchant-setup)
+- [Database Schema](#database-schema)
+- [Testing](#testing)
+- [Pre-commit](#pre-commit)
+- [Production deployment](#production-deployment)
+
 ## Architecture
 
 ```
@@ -114,6 +129,20 @@ BOOTSTRAP_ADMIN_PASSWORD=your-secure-password-here
 5. After the admin exists, you may remove `BOOTSTRAP_ADMIN_*` from `.env` (optional, recommended for production). Subsequent startups will skip bootstrap.
 
 `GET /api/v1/auth/me` returns `"is_admin": true` for admin users — the frontend uses this flag (no role UUID in env required).
+
+### Promoting an additional user to admin
+
+`BOOTSTRAP_ADMIN_*` only creates **one** admin, once, on first startup. There is no API
+endpoint to promote a user afterward — do it directly in the database:
+
+```bash
+docker compose -f docker-compose.prod.yml exec db psql -U postgres -d app -c \
+  "UPDATE users SET role_id = (SELECT id FROM roles WHERE role = 'admin') WHERE email = 'someone@example.com';"
+```
+
+No re-login needed — the JWT only carries the user id, `/auth/me` resolves `is_admin` from the
+DB on every call, so the existing token picks up the new role immediately. The frontend may
+still need a page refresh to refetch `/auth/me` and show the admin UI.
 
 ## Environment Variables
 

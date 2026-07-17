@@ -333,7 +333,10 @@ server {
 
     client_max_body_size 20m;
 
-    location / {
+    # Only proxy the real API surface + health check. Everything else gets a flat
+    # 404 from nginx itself, so scanner noise (.env, wp-login.php, firebase keys, ...)
+    # never reaches uvicorn. See deploy/nginx/otherside-api.conf for the canonical copy.
+    location ~ ^/(api/|health$) {
         proxy_pass http://127.0.0.1:8000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -341,6 +344,10 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 60s;
+    }
+
+    location / {
+        return 404;
     }
 }
 ```
@@ -454,7 +461,41 @@ certbot renew --dry-run
 
 ---
 
-## Часть 7. Финальная проверка
+## Часть 7. Fail2ban (бан сканеров)
+
+Любой публичный домен сразу начинает получать фоновый шум от ботов, которые ищут `.env`,
+`wp-login.php`, `firebase-adminsdk.json`, `/owa/` и т.п. Раздел 5.2 уже режет это на уровне
+nginx (всё, кроме `/api/*` и `/health`, получает 404 не доходя до приложения), но banнить сами
+IP полезно дополнительно — меньше шума в логах и меньше нагрузки на nginx.
+
+```bash
+apt install -y fail2ban
+```
+
+Скопируй фильтр и джейл из репозитория (`OtherSideServer/deploy/fail2ban/`):
+
+```bash
+scp deploy/fail2ban/filter.d/otherside-nginx-404.conf root@<server>:/etc/fail2ban/filter.d/
+scp deploy/fail2ban/jail.d/otherside-nginx-404.conf root@<server>:/etc/fail2ban/jail.d/
+```
+
+Перезапусти и проверь:
+
+```bash
+systemctl restart fail2ban
+fail2ban-client status otherside-nginx-404
+```
+
+Джейл банит IP, который за 5 минут получил 15+ ответов `404` от nginx (порог намеренно
+щедрый, чтобы не задеть реальных пользователей) — на 1 час. Разбанить вручную:
+
+```bash
+fail2ban-client set otherside-nginx-404 unbanip <IP>
+```
+
+---
+
+## Часть 8. Финальная проверка
 
 | URL | Ожидание |
 |-----|----------|
@@ -480,7 +521,7 @@ docker compose -f docker-compose.prod.yml restart api
 
 ---
 
-## Часть 8. Обновление после изменений в коде
+## Часть 9. Обновление после изменений в коде
 
 ### Бэкенд
 
@@ -501,7 +542,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ---
 
-## Часть 9. Автозапуск
+## Часть 10. Автозапуск
 
 Docker с `restart: unless-stopped` поднимет контейнеры после перезагрузки. Nginx:
 
@@ -511,7 +552,7 @@ systemctl enable nginx
 
 ---
 
-## Часть 10. Чеклист безопасности
+## Часть 11. Чеклист безопасности
 
 - [ ] `DEBUG=false` на бэке
 - [ ] `SECRET_KEY` — случайный (`openssl rand -hex 32`), не из примера
@@ -520,10 +561,12 @@ systemctl enable nginx
 - [ ] `.env` не коммитится в git
 - [ ] `CORS_ORIGINS` — только твои домены, не `["*"]`
 - [ ] SSH по ключу (по желанию отключить вход по паролю)
+- [ ] nginx `otherside-api` проксирует только `/api/*` и `/health` (раздел 5.2)
+- [ ] fail2ban джейл `otherside-nginx-404` активен (раздел 7)
 
 ---
 
-## Часть 11. Типичные проблемы
+## Часть 12. Типичные проблемы
 
 | Проблема | Решение |
 |----------|---------|
@@ -560,3 +603,4 @@ systemctl reload nginx
 
 - [OtherSideServer/README.md](./OtherSideServer/README.md) — API, миграции, локальный Docker
 - [OtherSideFrontend/README.md](./OtherSideFrontend/README.md) — фронтенд, env-переменные
+- [OtherSideServer/deploy/](./OtherSideServer/deploy/) — актуальные копии конфигов nginx/fail2ban с прод-сервера
