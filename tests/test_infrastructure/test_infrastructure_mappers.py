@@ -50,6 +50,15 @@ class TestUserMapper:
         restored = user_model_to_entity(model)
         assert restored.username == entity.username
         assert restored.email == entity.email
+        assert restored.is_blocked == entity.is_blocked
+
+    def test_round_trip_blocked(self) -> None:
+        entity = User.create(
+            "blocked", "blocked@example.com", "hash", is_blocked=True
+        )
+        model = user_entity_to_model(entity)
+        restored = user_model_to_entity(model)
+        assert restored.is_blocked is True
 
 
 class TestCompanyGameMapper:

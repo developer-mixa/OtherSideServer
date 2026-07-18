@@ -13,6 +13,9 @@ from application.use_cases import (
     CreateSubscriptionPlanUseCase,
     CreateSubscriptionUseCase,
     DeleteCompanyGameUseCase,
+    DeletePromocodeUseCase,
+    DeleteSubscriptionPlanUseCase,
+    DeleteSubscriptionUseCase,
     GetCurrentUserUseCase,
     GetMaintenanceModeUseCase,
     GetPaymentUseCase,
@@ -23,10 +26,16 @@ from application.use_cases import (
     ListRolesUseCase,
     ListSubscriptionPlansUseCase,
     ListSubscriptionsUseCase,
+    ListUsersUseCase,
     LoginUserUseCase,
     ProcessRobokassaWebhookUseCase,
     RegisterUserUseCase,
     SetMaintenanceModeUseCase,
+    UpdateCompanyGameUseCase,
+    UpdatePromocodeUseCase,
+    UpdateSubscriptionPlanUseCase,
+    UpdateSubscriptionUseCase,
+    UpdateUserUseCase,
 )
 from application.use_cases.contact import ListContactSubmissionsUseCase, SubmitContactUseCase
 from application.use_cases.landing import (
@@ -75,6 +84,14 @@ class AppProvider(Provider):
         return GetCurrentUserUseCase(uow)
 
     @provide(scope=Scope.REQUEST)
+    def list_users(self, uow: SqlAlchemyUnitOfWork) -> ListUsersUseCase:
+        return ListUsersUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def update_user(self, uow: SqlAlchemyUnitOfWork) -> UpdateUserUseCase:
+        return UpdateUserUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
     def list_roles(self, uow: SqlAlchemyUnitOfWork) -> ListRolesUseCase:
         return ListRolesUseCase(uow)
 
@@ -95,12 +112,24 @@ class AppProvider(Provider):
         return DeleteCompanyGameUseCase(uow)
 
     @provide(scope=Scope.REQUEST)
+    def update_company_game(self, uow: SqlAlchemyUnitOfWork) -> UpdateCompanyGameUseCase:
+        return UpdateCompanyGameUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
     def list_subscription_plans(self, uow: SqlAlchemyUnitOfWork) -> ListSubscriptionPlansUseCase:
         return ListSubscriptionPlansUseCase(uow)
 
     @provide(scope=Scope.REQUEST)
     def create_subscription_plan(self, uow: SqlAlchemyUnitOfWork) -> CreateSubscriptionPlanUseCase:
         return CreateSubscriptionPlanUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def update_subscription_plan(self, uow: SqlAlchemyUnitOfWork) -> UpdateSubscriptionPlanUseCase:
+        return UpdateSubscriptionPlanUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def delete_subscription_plan(self, uow: SqlAlchemyUnitOfWork) -> DeleteSubscriptionPlanUseCase:
+        return DeleteSubscriptionPlanUseCase(uow)
 
     @provide(scope=Scope.REQUEST)
     def list_subscriptions(self, uow: SqlAlchemyUnitOfWork) -> ListSubscriptionsUseCase:
@@ -111,12 +140,28 @@ class AppProvider(Provider):
         return CreateSubscriptionUseCase(uow)
 
     @provide(scope=Scope.REQUEST)
+    def update_subscription(self, uow: SqlAlchemyUnitOfWork) -> UpdateSubscriptionUseCase:
+        return UpdateSubscriptionUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def delete_subscription(self, uow: SqlAlchemyUnitOfWork) -> DeleteSubscriptionUseCase:
+        return DeleteSubscriptionUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
     def list_promocodes(self, uow: SqlAlchemyUnitOfWork) -> ListPromocodesUseCase:
         return ListPromocodesUseCase(uow)
 
     @provide(scope=Scope.REQUEST)
     def create_promocode(self, uow: SqlAlchemyUnitOfWork) -> CreatePromocodeUseCase:
         return CreatePromocodeUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def update_promocode(self, uow: SqlAlchemyUnitOfWork) -> UpdatePromocodeUseCase:
+        return UpdatePromocodeUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def delete_promocode(self, uow: SqlAlchemyUnitOfWork) -> DeletePromocodeUseCase:
+        return DeletePromocodeUseCase(uow)
 
     @provide(scope=Scope.REQUEST)
     def list_payments(self, uow: SqlAlchemyUnitOfWork) -> ListPaymentsUseCase:

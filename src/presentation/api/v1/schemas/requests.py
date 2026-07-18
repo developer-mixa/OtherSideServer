@@ -28,11 +28,24 @@ class CompanyGameCreateRequest(BaseModel):
     game: str = Field(min_length=1, max_length=128)
 
 
+class CompanyGameUpdateRequest(BaseModel):
+    game: str | None = Field(default=None, min_length=1, max_length=128)
+
+
 class SubscriptionPlanCreateRequest(BaseModel):
     type: str = Field(min_length=1, max_length=64)
     game_id: UUID | None = None
     price_amount: Decimal = Field(default=Decimal("0.00"), ge=0, decimal_places=2)
     is_active: bool = True
+
+    model_config = ConfigDict(json_encoders={Decimal: str})
+
+
+class SubscriptionPlanUpdateRequest(BaseModel):
+    type: str | None = Field(default=None, min_length=1, max_length=64)
+    game_id: UUID | None = None
+    price_amount: Decimal | None = Field(default=None, ge=0, decimal_places=2)
+    is_active: bool | None = None
 
     model_config = ConfigDict(json_encoders={Decimal: str})
 
@@ -43,10 +56,29 @@ class SubscriptionCreateRequest(BaseModel):
     active_until: date | None = None
 
 
+class SubscriptionUpdateRequest(BaseModel):
+    plan_id: UUID | None = None
+    active_until: date | None = None
+
+
 class PromocodeCreateRequest(BaseModel):
     code: str = Field(min_length=4, max_length=32)
     plan_id: UUID
     is_active: bool = True
+
+
+class PromocodeUpdateRequest(BaseModel):
+    code: str | None = Field(default=None, min_length=4, max_length=32)
+    plan_id: UUID | None = None
+    is_active: bool | None = None
+
+
+class UserUpdateRequest(BaseModel):
+    username: str | None = Field(default=None, min_length=3, max_length=32)
+    email: EmailStr | None = None
+    role_id: UUID | None = None
+    is_verified: bool | None = None
+    is_blocked: bool | None = None
 
 
 class PaymentInitRequest(BaseModel):

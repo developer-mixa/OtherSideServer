@@ -22,6 +22,7 @@ class UserDTO:
     is_verified: bool
     role_id: UUID | None = None
     is_admin: bool = False
+    is_blocked: bool = False
 
 
 @dataclass(slots=True)
@@ -29,6 +30,15 @@ class UserCreateDTO:
     username: str
     email: str
     password: str
+
+
+@dataclass(slots=True)
+class UserUpdateDTO:
+    username: str | None = None
+    email: str | None = None
+    role_id: UUID | None = None
+    is_verified: bool | None = None
+    is_blocked: bool | None = None
 
 
 @dataclass(slots=True)
@@ -49,6 +59,11 @@ class CompanyGameCreateDTO:
 
 
 @dataclass(slots=True)
+class CompanyGameUpdateDTO:
+    game: str | None = None
+
+
+@dataclass(slots=True)
 class SubscriptionPlanDTO:
     id: UUID
     type: str
@@ -63,6 +78,14 @@ class SubscriptionPlanCreateDTO:
     game_id: UUID | None = None
     price_amount: Decimal = Decimal("0.00")
     is_active: bool = True
+
+
+@dataclass(slots=True)
+class SubscriptionPlanUpdateDTO:
+    type: str | None = None
+    game_id: UUID | None = None
+    price_amount: Decimal | None = None
+    is_active: bool | None = None
 
 
 @dataclass(slots=True)
@@ -82,6 +105,12 @@ class SubscriptionCreateDTO:
 
 
 @dataclass(slots=True)
+class SubscriptionUpdateDTO:
+    plan_id: UUID | None = None
+    active_until: date | None = None
+
+
+@dataclass(slots=True)
 class PromocodeDTO:
     id: UUID
     code: str
@@ -94,6 +123,13 @@ class PromocodeCreateDTO:
     code: str
     plan_id: UUID
     is_active: bool = True
+
+
+@dataclass(slots=True)
+class PromocodeUpdateDTO:
+    code: str | None = None
+    plan_id: UUID | None = None
+    is_active: bool | None = None
 
 
 @dataclass(slots=True)

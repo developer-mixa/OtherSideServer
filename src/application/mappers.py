@@ -41,6 +41,7 @@ def user_to_dto(entity: User) -> UserDTO:
         email=entity.email,
         is_verified=entity.is_verified,
         role_id=entity.role_id,
+        is_blocked=entity.is_blocked,
     )
 
 

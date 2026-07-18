@@ -28,6 +28,7 @@ class UserResponse(BaseModel):
     is_verified: bool
     role_id: UUID | None = None
     is_admin: bool = False
+    is_blocked: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

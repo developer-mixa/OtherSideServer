@@ -140,6 +140,14 @@ class SqlAlchemyUserRepository:
         )
         return result.scalar_one_or_none() is not None
 
+    async def update(self, entity: User) -> User:
+        tracked = self._identity_map.get(User, entity.id)
+        if tracked is None:
+            tracked = self._identity_map.register(entity, EntityState.CLEAN)
+        tracked.mark_dirty()
+        await self._session.merge(user_entity_to_model(entity))
+        return entity
+
 
 class SqlAlchemyCompanyGameRepository:
     def __init__(self, session: AsyncSession, identity_map: IdentityMap) -> None:
@@ -169,6 +177,14 @@ class SqlAlchemyCompanyGameRepository:
         self._session.add(company_game_entity_to_model(entity))
         return entity
 
+    async def update(self, entity: CompanyGame) -> CompanyGame:
+        tracked = self._identity_map.get(CompanyGame, entity.id)
+        if tracked is None:
+            tracked = self._identity_map.register(entity, EntityState.CLEAN)
+        tracked.mark_dirty()
+        await self._session.merge(company_game_entity_to_model(entity))
+        return entity
+
     async def delete(self, game_id: UUID) -> None:
         await self._session.execute(delete(CompanyGameModel).where(CompanyGameModel.id == game_id))
 
@@ -192,6 +208,14 @@ class SqlAlchemySubscriptionPlanRepository:
     async def add(self, entity: SubscriptionPlan) -> SubscriptionPlan:
         self._identity_map.register(entity, EntityState.NEW)
         self._session.add(subscription_plan_entity_to_model(entity))
+        return entity
+
+    async def update(self, entity: SubscriptionPlan) -> SubscriptionPlan:
+        tracked = self._identity_map.get(SubscriptionPlan, entity.id)
+        if tracked is None:
+            tracked = self._identity_map.register(entity, EntityState.CLEAN)
+        tracked.mark_dirty()
+        await self._session.merge(subscription_plan_entity_to_model(entity))
         return entity
 
     async def delete(self, plan_id: UUID) -> None:
@@ -236,6 +260,14 @@ class SqlAlchemySubscriptionRepository:
         self._session.add(subscription_entity_to_model(entity))
         return entity
 
+    async def update(self, entity: Subscription) -> Subscription:
+        tracked = self._identity_map.get(Subscription, entity.id)
+        if tracked is None:
+            tracked = self._identity_map.register(entity, EntityState.CLEAN)
+        tracked.mark_dirty()
+        await self._session.merge(subscription_entity_to_model(entity))
+        return entity
+
     async def delete(self, subscription_id: UUID) -> None:
         await self._session.execute(
             delete(SubscriptionModel).where(SubscriptionModel.id == subscription_id)
@@ -268,6 +300,14 @@ class SqlAlchemyPromocodeRepository:
     async def add(self, entity: PromocodeEntity) -> PromocodeEntity:
         self._identity_map.register(entity, EntityState.NEW)
         self._session.add(promocode_entity_to_model(entity))
+        return entity
+
+    async def update(self, entity: PromocodeEntity) -> PromocodeEntity:
+        tracked = self._identity_map.get(PromocodeEntity, entity.id)
+        if tracked is None:
+            tracked = self._identity_map.register(entity, EntityState.CLEAN)
+        tracked.mark_dirty()
+        await self._session.merge(promocode_entity_to_model(entity))
         return entity
 
     async def delete(self, promocode_id: UUID) -> None:

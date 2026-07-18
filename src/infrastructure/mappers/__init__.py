@@ -48,6 +48,7 @@ def user_model_to_entity(model: UserModel) -> User:
         password_hash=model.password_hash,
         is_verified=model.is_verified,
         role_id=model.role_id,
+        is_blocked=model.is_blocked,
     )
 
 
@@ -59,6 +60,7 @@ def user_entity_to_model(entity: User) -> UserModel:
         password_hash=entity.password_hash,
         is_verified=entity.is_verified,
         role_id=entity.role_id,
+        is_blocked=entity.is_blocked,
     )
 
 

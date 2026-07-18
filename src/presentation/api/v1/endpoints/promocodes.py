@@ -1,17 +1,23 @@
 """Promocodes endpoints."""
 
 from typing import Annotated
+from uuid import UUID
 
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
 from fastapi import APIRouter, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials
 
-from application.dtos import PromocodeCreateDTO
-from application.use_cases import CreatePromocodeUseCase, ListPromocodesUseCase
+from application.dtos import PromocodeCreateDTO, PromocodeUpdateDTO
+from application.use_cases import (
+    CreatePromocodeUseCase,
+    DeletePromocodeUseCase,
+    ListPromocodesUseCase,
+    UpdatePromocodeUseCase,
+)
 from config.deps import bearer_scheme, resolve_user_id
 from presentation.api.v1.mappers import promocode_dto_to_response
-from presentation.api.v1.schemas.requests import PromocodeCreateRequest
+from presentation.api.v1.schemas.requests import PromocodeCreateRequest, PromocodeUpdateRequest
 from presentation.api.v1.schemas.responses import PromocodeResponse
 
 router = APIRouter(prefix="/promocodes", tags=["promocodes"])
@@ -39,3 +45,28 @@ async def create_promocode(
     dto = PromocodeCreateDTO(code=body.code, plan_id=body.plan_id, is_active=body.is_active)
     result = await use_case.execute(actor_id, dto)
     return promocode_dto_to_response(result)
+
+
+@router.patch("/{promocode_id}", response_model=PromocodeResponse)
+@inject
+async def update_promocode(
+    promocode_id: UUID,
+    body: PromocodeUpdateRequest,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    use_case: FromDishka[UpdatePromocodeUseCase],
+) -> PromocodeResponse:
+    actor_id = resolve_user_id(credentials)
+    dto = PromocodeUpdateDTO(code=body.code, plan_id=body.plan_id, is_active=body.is_active)
+    result = await use_case.execute(actor_id, promocode_id, dto)
+    return promocode_dto_to_response(result)
+
+
+@router.delete("/{promocode_id}", status_code=status.HTTP_204_NO_CONTENT)
+@inject
+async def delete_promocode(
+    promocode_id: UUID,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    use_case: FromDishka[DeletePromocodeUseCase],
+) -> None:
+    actor_id = resolve_user_id(credentials)
+    await use_case.execute(actor_id, promocode_id)

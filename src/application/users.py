@@ -20,4 +20,5 @@ async def build_user_dto(uow: UnitOfWorkProtocol, user: User) -> UserDTO:
         is_verified=base.is_verified,
         role_id=base.role_id,
         is_admin=is_admin,
+        is_blocked=base.is_blocked,
     )

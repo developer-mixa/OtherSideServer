@@ -19,6 +19,9 @@ from application.use_cases import (
     CreateSubscriptionPlanUseCase,
     CreateSubscriptionUseCase,
     DeleteCompanyGameUseCase,
+    DeletePromocodeUseCase,
+    DeleteSubscriptionPlanUseCase,
+    DeleteSubscriptionUseCase,
     GetCurrentUserUseCase,
     GetMaintenanceModeUseCase,
     GetPaymentUseCase,
@@ -29,10 +32,16 @@ from application.use_cases import (
     ListRolesUseCase,
     ListSubscriptionPlansUseCase,
     ListSubscriptionsUseCase,
+    ListUsersUseCase,
     LoginUserUseCase,
     ProcessRobokassaWebhookUseCase,
     RegisterUserUseCase,
     SetMaintenanceModeUseCase,
+    UpdateCompanyGameUseCase,
+    UpdatePromocodeUseCase,
+    UpdateSubscriptionPlanUseCase,
+    UpdateSubscriptionUseCase,
+    UpdateUserUseCase,
 )
 from config.settings import settings
 from infrastructure.payments.robokassa import RobokassaClient
@@ -115,6 +124,10 @@ class FakeUserRepo:
     async def exists_with_role_id(self, role_id: UUID) -> bool:
         return any(user.role_id == role_id for user in self._store.users.values())
 
+    async def update(self, entity: User) -> User:
+        self._store.users[entity.id] = entity
+        return entity
+
 
 class FakeCompanyGameRepo:
     def __init__(self, store: InMemoryStore) -> None:
@@ -133,6 +146,10 @@ class FakeCompanyGameRepo:
         self._store.company_games[entity.id] = entity
         return entity
 
+    async def update(self, entity: CompanyGame) -> CompanyGame:
+        self._store.company_games[entity.id] = entity
+        return entity
+
     async def delete(self, game_id: UUID) -> None:
         self._store.company_games.pop(game_id, None)
 
@@ -148,6 +165,10 @@ class FakeSubscriptionPlanRepo:
         return list(self._store.subscription_plans.values())
 
     async def add(self, entity: SubscriptionPlan) -> SubscriptionPlan:
+        self._store.subscription_plans[entity.id] = entity
+        return entity
+
+    async def update(self, entity: SubscriptionPlan) -> SubscriptionPlan:
         self._store.subscription_plans[entity.id] = entity
         return entity
 
@@ -181,6 +202,10 @@ class FakeSubscriptionRepo:
         self._store.subscriptions[entity.id] = entity
         return entity
 
+    async def update(self, entity: Subscription) -> Subscription:
+        self._store.subscriptions[entity.id] = entity
+        return entity
+
     async def delete(self, subscription_id: UUID) -> None:
         self._store.subscriptions.pop(subscription_id, None)
 
@@ -202,6 +227,10 @@ class FakePromocodeRepo:
         return list(self._store.promocodes.values())
 
     async def add(self, entity: PromocodeEntity) -> PromocodeEntity:
+        self._store.promocodes[entity.id] = entity
+        return entity
+
+    async def update(self, entity: PromocodeEntity) -> PromocodeEntity:
         self._store.promocodes[entity.id] = entity
         return entity
 
@@ -327,6 +356,14 @@ class TestProvider(Provider):
         return GetCurrentUserUseCase(self._uow)
 
     @provide(scope=Scope.REQUEST)
+    def list_users(self) -> ListUsersUseCase:
+        return ListUsersUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def update_user(self) -> UpdateUserUseCase:
+        return UpdateUserUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
     def list_roles(self) -> ListRolesUseCase:
         return ListRolesUseCase(self._uow)
 
@@ -347,12 +384,24 @@ class TestProvider(Provider):
         return DeleteCompanyGameUseCase(self._uow)
 
     @provide(scope=Scope.REQUEST)
+    def update_company_game(self) -> UpdateCompanyGameUseCase:
+        return UpdateCompanyGameUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
     def list_subscription_plans(self) -> ListSubscriptionPlansUseCase:
         return ListSubscriptionPlansUseCase(self._uow)
 
     @provide(scope=Scope.REQUEST)
     def create_subscription_plan(self) -> CreateSubscriptionPlanUseCase:
         return CreateSubscriptionPlanUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def update_subscription_plan(self) -> UpdateSubscriptionPlanUseCase:
+        return UpdateSubscriptionPlanUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def delete_subscription_plan(self) -> DeleteSubscriptionPlanUseCase:
+        return DeleteSubscriptionPlanUseCase(self._uow)
 
     @provide(scope=Scope.REQUEST)
     def list_subscriptions(self) -> ListSubscriptionsUseCase:
@@ -363,12 +412,28 @@ class TestProvider(Provider):
         return CreateSubscriptionUseCase(self._uow)
 
     @provide(scope=Scope.REQUEST)
+    def update_subscription(self) -> UpdateSubscriptionUseCase:
+        return UpdateSubscriptionUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def delete_subscription(self) -> DeleteSubscriptionUseCase:
+        return DeleteSubscriptionUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
     def list_promocodes(self) -> ListPromocodesUseCase:
         return ListPromocodesUseCase(self._uow)
 
     @provide(scope=Scope.REQUEST)
     def create_promocode(self) -> CreatePromocodeUseCase:
         return CreatePromocodeUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def update_promocode(self) -> UpdatePromocodeUseCase:
+        return UpdatePromocodeUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def delete_promocode(self) -> DeletePromocodeUseCase:
+        return DeletePromocodeUseCase(self._uow)
 
     @provide(scope=Scope.REQUEST)
     def list_payments(self) -> ListPaymentsUseCase:

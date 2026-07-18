@@ -8,15 +8,16 @@ from dishka.integrations.fastapi import inject
 from fastapi import APIRouter, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials
 
-from application.dtos import CompanyGameCreateDTO
+from application.dtos import CompanyGameCreateDTO, CompanyGameUpdateDTO
 from application.use_cases import (
     CreateCompanyGameUseCase,
     DeleteCompanyGameUseCase,
     ListCompanyGamesUseCase,
+    UpdateCompanyGameUseCase,
 )
 from config.deps import bearer_scheme, resolve_user_id
 from presentation.api.v1.mappers import company_game_dto_to_response
-from presentation.api.v1.schemas.requests import CompanyGameCreateRequest
+from presentation.api.v1.schemas.requests import CompanyGameCreateRequest, CompanyGameUpdateRequest
 from presentation.api.v1.schemas.responses import CompanyGameResponse
 
 router = APIRouter(prefix="/games", tags=["games"])
@@ -43,6 +44,20 @@ async def create_game(
     actor_id = resolve_user_id(credentials)
     dto = CompanyGameCreateDTO(game=body.game)
     result = await use_case.execute(actor_id, dto)
+    return company_game_dto_to_response(result)
+
+
+@router.patch("/{game_id}", response_model=CompanyGameResponse)
+@inject
+async def update_game(
+    game_id: UUID,
+    body: CompanyGameUpdateRequest,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    use_case: FromDishka[UpdateCompanyGameUseCase],
+) -> CompanyGameResponse:
+    actor_id = resolve_user_id(credentials)
+    dto = CompanyGameUpdateDTO(game=body.game)
+    result = await use_case.execute(actor_id, game_id, dto)
     return company_game_dto_to_response(result)
 
 

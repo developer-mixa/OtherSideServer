@@ -7,11 +7,16 @@ import pytest
 
 from application.dtos import (
     CompanyGameCreateDTO,
+    CompanyGameUpdateDTO,
     PaymentCreateDTO,
     PromocodeCreateDTO,
+    PromocodeUpdateDTO,
     SubscriptionCreateDTO,
     SubscriptionPlanCreateDTO,
+    SubscriptionPlanUpdateDTO,
+    SubscriptionUpdateDTO,
     UserCreateDTO,
+    UserUpdateDTO,
 )
 from application.use_cases import (
     CreateCompanyGameUseCase,
@@ -21,14 +26,23 @@ from application.use_cases import (
     CreateSubscriptionPlanUseCase,
     CreateSubscriptionUseCase,
     DeleteCompanyGameUseCase,
+    DeletePromocodeUseCase,
+    DeleteSubscriptionPlanUseCase,
+    DeleteSubscriptionUseCase,
     GetCurrentUserUseCase,
     ListRolesUseCase,
     ListSubscriptionsUseCase,
+    ListUsersUseCase,
     LoginUserUseCase,
     RegisterUserUseCase,
+    UpdateCompanyGameUseCase,
+    UpdatePromocodeUseCase,
+    UpdateSubscriptionPlanUseCase,
+    UpdateSubscriptionUseCase,
+    UpdateUserUseCase,
 )
 from config.security import hash_password
-from domain.entities import CompanyGame, Role, SubscriptionPlan, User
+from domain.entities import CompanyGame, PromocodeEntity, Role, Subscription, SubscriptionPlan, User
 from domain.exceptions import (
     AuthenticationError,
     AuthorizationError,
@@ -85,6 +99,16 @@ class TestLoginUserUseCase:
         with pytest.raises(AuthenticationError):
             await use_case.execute("login@example.com", "wrongpass")
 
+    async def test_login_blocked_user_rejected(self, uow: FakeUnitOfWork) -> None:
+        user = User.create(
+            "blockeduser", "blocked@example.com", hash_password("password123")
+        )
+        user.is_blocked = True
+        uow._store.users[user.id] = user
+        use_case = LoginUserUseCase(uow)
+        with pytest.raises(AuthorizationError):
+            await use_case.execute("blocked@example.com", "password123")
+
 
 class TestGetCurrentUserUseCase:
     async def test_get_existing_user(self, uow: FakeUnitOfWork) -> None:
@@ -96,6 +120,54 @@ class TestGetCurrentUserUseCase:
     async def test_get_missing_user(self, uow: FakeUnitOfWork) -> None:
         with pytest.raises(EntityNotFoundError):
             await GetCurrentUserUseCase(uow).execute(uuid4())
+
+
+class TestListUsersUseCase:
+    async def test_list_users_requires_admin(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        user = User.create("plain", "plain@example.com", "hash")
+        uow._store.users[user.id] = user
+        result = await ListUsersUseCase(uow).execute(admin.id)
+        emails = {u.email for u in result}
+        assert "plain@example.com" in emails
+        assert "admin@example.com" in emails
+
+    async def test_list_users_forbidden_for_regular_user(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("plain", "plain2@example.com", "hash")
+        uow._store.users[user.id] = user
+        with pytest.raises(AuthorizationError):
+            await ListUsersUseCase(uow).execute(user.id)
+
+
+class TestUpdateUserUseCase:
+    async def test_update_user_fields(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        user = User.create("target", "target@example.com", "hash")
+        uow._store.users[user.id] = user
+        dto = UserUpdateDTO(username="renamed", is_verified=True)
+        result = await UpdateUserUseCase(uow).execute(admin.id, user.id, dto)
+        assert result.username == "renamed"
+        assert result.is_verified is True
+
+    async def test_block_user(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        user = User.create("target2", "target2@example.com", "hash")
+        uow._store.users[user.id] = user
+        dto = UserUpdateDTO(is_blocked=True)
+        result = await UpdateUserUseCase(uow).execute(admin.id, user.id, dto)
+        assert result.is_blocked is True
+        assert uow._store.users[user.id].is_blocked is True
+
+    async def test_update_missing_user(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        with pytest.raises(EntityNotFoundError):
+            await UpdateUserUseCase(uow).execute(admin.id, uuid4(), UserUpdateDTO(username="x"))
+
+    async def test_update_user_forbidden_for_regular_user(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("plain3", "plain3@example.com", "hash")
+        uow._store.users[user.id] = user
+        with pytest.raises(AuthorizationError):
+            await UpdateUserUseCase(uow).execute(user.id, user.id, UserUpdateDTO(username="x"))
 
 
 class TestRoleUseCases:
@@ -139,6 +211,31 @@ class TestCompanyGameUseCases:
         with pytest.raises(EntityNotFoundError):
             await DeleteCompanyGameUseCase(uow).execute(admin.id, uuid4())
 
+    async def test_update_game(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        game = CompanyGame.create("OldName")
+        uow._store.company_games[game.id] = game
+        dto = CompanyGameUpdateDTO(game="NewName")
+        result = await UpdateCompanyGameUseCase(uow).execute(admin.id, game.id, dto)
+        assert result.game == "NewName"
+
+    async def test_update_missing_game(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        with pytest.raises(EntityNotFoundError):
+            await UpdateCompanyGameUseCase(uow).execute(
+                admin.id, uuid4(), CompanyGameUpdateDTO(game="X")
+            )
+
+    async def test_update_game_forbidden_for_regular_user(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("plain", "plain4@example.com", "hash")
+        uow._store.users[user.id] = user
+        game = CompanyGame.create("Game")
+        uow._store.company_games[game.id] = game
+        with pytest.raises(AuthorizationError):
+            await UpdateCompanyGameUseCase(uow).execute(
+                user.id, game.id, CompanyGameUpdateDTO(game="X")
+            )
+
 
 class TestSubscriptionPlanUseCases:
     async def test_create_plan_with_game(self, uow: FakeUnitOfWork) -> None:
@@ -154,6 +251,34 @@ class TestSubscriptionPlanUseCases:
         dto = SubscriptionPlanCreateDTO(type="monthly", game_id=uuid4())
         with pytest.raises(EntityNotFoundError):
             await CreateSubscriptionPlanUseCase(uow).execute(admin.id, dto)
+
+    async def test_update_plan(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        plan = SubscriptionPlan.create("monthly")
+        uow._store.subscription_plans[plan.id] = plan
+        dto = SubscriptionPlanUpdateDTO(type="yearly", is_active=False)
+        result = await UpdateSubscriptionPlanUseCase(uow).execute(admin.id, plan.id, dto)
+        assert result.type == "yearly"
+        assert result.is_active is False
+
+    async def test_update_missing_plan(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        with pytest.raises(EntityNotFoundError):
+            await UpdateSubscriptionPlanUseCase(uow).execute(
+                admin.id, uuid4(), SubscriptionPlanUpdateDTO(type="yearly")
+            )
+
+    async def test_delete_plan(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        plan = SubscriptionPlan.create("monthly")
+        uow._store.subscription_plans[plan.id] = plan
+        await DeleteSubscriptionPlanUseCase(uow).execute(admin.id, plan.id)
+        assert plan.id not in uow._store.subscription_plans
+
+    async def test_delete_missing_plan(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        with pytest.raises(EntityNotFoundError):
+            await DeleteSubscriptionPlanUseCase(uow).execute(admin.id, uuid4())
 
 
 class TestSubscriptionUseCases:
@@ -182,6 +307,39 @@ class TestSubscriptionUseCases:
         with pytest.raises(AuthorizationError):
             await ListSubscriptionsUseCase(uow).execute(user.id, other.id)
 
+    async def test_update_subscription(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        user = User.create("subuser2", "sub2b@example.com", "hash")
+        uow._store.users[user.id] = user
+        plan = SubscriptionPlan.create("monthly")
+        uow._store.subscription_plans[plan.id] = plan
+        sub = Subscription.create(user_id=user.id)
+        uow._store.subscriptions[sub.id] = sub
+        dto = SubscriptionUpdateDTO(plan_id=plan.id)
+        result = await UpdateSubscriptionUseCase(uow).execute(admin.id, sub.id, dto)
+        assert result.plan_id == plan.id
+
+    async def test_update_missing_subscription(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        with pytest.raises(EntityNotFoundError):
+            await UpdateSubscriptionUseCase(uow).execute(
+                admin.id, uuid4(), SubscriptionUpdateDTO()
+            )
+
+    async def test_delete_subscription(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        user = User.create("subuser3", "sub3@example.com", "hash")
+        uow._store.users[user.id] = user
+        sub = Subscription.create(user_id=user.id)
+        uow._store.subscriptions[sub.id] = sub
+        await DeleteSubscriptionUseCase(uow).execute(admin.id, sub.id)
+        assert sub.id not in uow._store.subscriptions
+
+    async def test_delete_missing_subscription(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        with pytest.raises(EntityNotFoundError):
+            await DeleteSubscriptionUseCase(uow).execute(admin.id, uuid4())
+
 
 class TestPromocodeUseCases:
     async def test_create_promocode(self, uow: FakeUnitOfWork) -> None:
@@ -191,6 +349,38 @@ class TestPromocodeUseCases:
         dto = PromocodeCreateDTO(code="SAVE10", plan_id=plan.id)
         result = await CreatePromocodeUseCase(uow).execute(admin.id, dto)
         assert result.code == "SAVE10"
+
+    async def test_update_promocode(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        plan = SubscriptionPlan.create("monthly")
+        uow._store.subscription_plans[plan.id] = plan
+        code = PromocodeEntity.create("SAVE10", plan.id)
+        uow._store.promocodes[code.id] = code
+        dto = PromocodeUpdateDTO(code="save20", is_active=False)
+        result = await UpdatePromocodeUseCase(uow).execute(admin.id, code.id, dto)
+        assert result.code == "SAVE20"
+        assert result.is_active is False
+
+    async def test_update_missing_promocode(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        with pytest.raises(EntityNotFoundError):
+            await UpdatePromocodeUseCase(uow).execute(
+                admin.id, uuid4(), PromocodeUpdateDTO(is_active=False)
+            )
+
+    async def test_delete_promocode(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        plan = SubscriptionPlan.create("monthly")
+        uow._store.subscription_plans[plan.id] = plan
+        code = PromocodeEntity.create("DEL10", plan.id)
+        uow._store.promocodes[code.id] = code
+        await DeletePromocodeUseCase(uow).execute(admin.id, code.id)
+        assert code.id not in uow._store.promocodes
+
+    async def test_delete_missing_promocode(self, uow: FakeUnitOfWork) -> None:
+        admin = make_admin_user(uow._store)
+        with pytest.raises(EntityNotFoundError):
+            await DeletePromocodeUseCase(uow).execute(admin.id, uuid4())
 
 
 class TestPaymentUseCases:

@@ -5,7 +5,7 @@ from uuid import uuid4
 from httpx import AsyncClient
 
 from config.security import hash_password
-from domain.entities import CompanyGame, SubscriptionPlan, User
+from domain.entities import CompanyGame, PromocodeEntity, Subscription, SubscriptionPlan, User
 from tests.conftest import FakeUnitOfWork
 
 
@@ -98,6 +98,35 @@ class TestGamesEndpoints:
         response = await client.delete(f"/api/v1/games/{game.id}", headers=admin_headers)
         assert response.status_code == 204
 
+    async def test_update_game(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, admin_headers: dict[str, str]
+    ) -> None:
+        game = CompanyGame.create("OldGame")
+        fake_uow._store.company_games[game.id] = game
+        response = await client.patch(
+            f"/api/v1/games/{game.id}", json={"game": "NewGame"}, headers=admin_headers
+        )
+        assert response.status_code == 200
+        assert response.json()["game"] == "NewGame"
+
+    async def test_update_game_not_found(
+        self, client: AsyncClient, admin_headers: dict[str, str]
+    ) -> None:
+        response = await client.patch(
+            f"/api/v1/games/{uuid4()}", json={"game": "X"}, headers=admin_headers
+        )
+        assert response.status_code == 404
+
+    async def test_update_game_forbidden_for_regular_user(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, auth_headers: dict[str, str]
+    ) -> None:
+        game = CompanyGame.create("Game")
+        fake_uow._store.company_games[game.id] = game
+        response = await client.patch(
+            f"/api/v1/games/{game.id}", json={"game": "X"}, headers=auth_headers
+        )
+        assert response.status_code == 403
+
 
 class TestPlansEndpoints:
     async def test_list_plans_public(self, client: AsyncClient) -> None:
@@ -116,6 +145,47 @@ class TestPlansEndpoints:
         )
         assert response.status_code == 201
         assert response.json()["type"] == "monthly"
+
+    async def test_update_plan(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, admin_headers: dict[str, str]
+    ) -> None:
+        plan = SubscriptionPlan.create("monthly")
+        fake_uow._store.subscription_plans[plan.id] = plan
+        response = await client.patch(
+            f"/api/v1/plans/{plan.id}",
+            json={"type": "yearly", "is_active": False},
+            headers=admin_headers,
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["type"] == "yearly"
+        assert body["is_active"] is False
+
+    async def test_update_plan_not_found(
+        self, client: AsyncClient, admin_headers: dict[str, str]
+    ) -> None:
+        response = await client.patch(
+            f"/api/v1/plans/{uuid4()}", json={"type": "yearly"}, headers=admin_headers
+        )
+        assert response.status_code == 404
+
+    async def test_delete_plan(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, admin_headers: dict[str, str]
+    ) -> None:
+        plan = SubscriptionPlan.create("monthly")
+        fake_uow._store.subscription_plans[plan.id] = plan
+        response = await client.delete(f"/api/v1/plans/{plan.id}", headers=admin_headers)
+        assert response.status_code == 204
+
+    async def test_update_plan_forbidden_for_regular_user(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, auth_headers: dict[str, str]
+    ) -> None:
+        plan = SubscriptionPlan.create("monthly")
+        fake_uow._store.subscription_plans[plan.id] = plan
+        response = await client.patch(
+            f"/api/v1/plans/{plan.id}", json={"type": "yearly"}, headers=auth_headers
+        )
+        assert response.status_code == 403
 
 
 class TestSubscriptionsEndpoints:
@@ -154,6 +224,55 @@ class TestSubscriptionsEndpoints:
         response = await client.get("/api/v1/subscriptions")
         assert response.status_code == 401
 
+    async def test_update_subscription(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, admin_headers: dict[str, str]
+    ) -> None:
+        user = User.create("subuser4", "sub4@example.com", "hash")
+        fake_uow._store.users[user.id] = user
+        plan = SubscriptionPlan.create("monthly")
+        fake_uow._store.subscription_plans[plan.id] = plan
+        sub = Subscription.create(user_id=user.id)
+        fake_uow._store.subscriptions[sub.id] = sub
+        response = await client.patch(
+            f"/api/v1/subscriptions/{sub.id}",
+            json={"plan_id": str(plan.id)},
+            headers=admin_headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["plan_id"] == str(plan.id)
+
+    async def test_update_subscription_not_found(
+        self, client: AsyncClient, admin_headers: dict[str, str]
+    ) -> None:
+        response = await client.patch(
+            f"/api/v1/subscriptions/{uuid4()}", json={}, headers=admin_headers
+        )
+        assert response.status_code == 404
+
+    async def test_delete_subscription(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, admin_headers: dict[str, str]
+    ) -> None:
+        user = User.create("subuser5", "sub5@example.com", "hash")
+        fake_uow._store.users[user.id] = user
+        sub = Subscription.create(user_id=user.id)
+        fake_uow._store.subscriptions[sub.id] = sub
+        response = await client.delete(
+            f"/api/v1/subscriptions/{sub.id}", headers=admin_headers
+        )
+        assert response.status_code == 204
+
+    async def test_update_subscription_forbidden_for_regular_user(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, auth_headers: dict[str, str]
+    ) -> None:
+        user = User.create("subuser6", "sub6@example.com", "hash")
+        fake_uow._store.users[user.id] = user
+        sub = Subscription.create(user_id=user.id)
+        fake_uow._store.subscriptions[sub.id] = sub
+        response = await client.patch(
+            f"/api/v1/subscriptions/{sub.id}", json={}, headers=auth_headers
+        )
+        assert response.status_code == 403
+
 
 class TestPromocodesEndpoints:
     async def test_create_promocode_requires_admin(
@@ -172,6 +291,118 @@ class TestPromocodesEndpoints:
     async def test_list_promocodes_unauthenticated(self, client: AsyncClient) -> None:
         response = await client.get("/api/v1/promocodes")
         assert response.status_code == 401
+
+    async def test_update_promocode(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, admin_headers: dict[str, str]
+    ) -> None:
+        plan = SubscriptionPlan.create("monthly")
+        fake_uow._store.subscription_plans[plan.id] = plan
+        code = PromocodeEntity.create("SAVE10", plan.id)
+        fake_uow._store.promocodes[code.id] = code
+        response = await client.patch(
+            f"/api/v1/promocodes/{code.id}",
+            json={"is_active": False},
+            headers=admin_headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["is_active"] is False
+
+    async def test_update_promocode_not_found(
+        self, client: AsyncClient, admin_headers: dict[str, str]
+    ) -> None:
+        response = await client.patch(
+            f"/api/v1/promocodes/{uuid4()}", json={"is_active": False}, headers=admin_headers
+        )
+        assert response.status_code == 404
+
+    async def test_delete_promocode(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, admin_headers: dict[str, str]
+    ) -> None:
+        plan = SubscriptionPlan.create("monthly")
+        fake_uow._store.subscription_plans[plan.id] = plan
+        code = PromocodeEntity.create("DEL10", plan.id)
+        fake_uow._store.promocodes[code.id] = code
+        response = await client.delete(
+            f"/api/v1/promocodes/{code.id}", headers=admin_headers
+        )
+        assert response.status_code == 204
+
+    async def test_update_promocode_forbidden_for_regular_user(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, auth_headers: dict[str, str]
+    ) -> None:
+        plan = SubscriptionPlan.create("monthly")
+        fake_uow._store.subscription_plans[plan.id] = plan
+        code = PromocodeEntity.create("SAVE30", plan.id)
+        fake_uow._store.promocodes[code.id] = code
+        response = await client.patch(
+            f"/api/v1/promocodes/{code.id}", json={"is_active": False}, headers=auth_headers
+        )
+        assert response.status_code == 403
+
+
+class TestUsersEndpoints:
+    async def test_list_users_requires_admin(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, admin_headers: dict[str, str]
+    ) -> None:
+        response = await client.get("/api/v1/users", headers=admin_headers)
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+    async def test_list_users_forbidden_for_regular_user(
+        self, client: AsyncClient, auth_headers: dict[str, str]
+    ) -> None:
+        response = await client.get("/api/v1/users", headers=auth_headers)
+        assert response.status_code == 403
+
+    async def test_list_users_unauthenticated(self, client: AsyncClient) -> None:
+        response = await client.get("/api/v1/users")
+        assert response.status_code == 401
+
+    async def test_update_user_block(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, admin_headers: dict[str, str]
+    ) -> None:
+        user = User.create("targetuser", "targetuser@example.com", "hash")
+        fake_uow._store.users[user.id] = user
+        response = await client.patch(
+            f"/api/v1/users/{user.id}",
+            json={"is_blocked": True},
+            headers=admin_headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["is_blocked"] is True
+
+    async def test_update_user_not_found(
+        self, client: AsyncClient, admin_headers: dict[str, str]
+    ) -> None:
+        response = await client.patch(
+            f"/api/v1/users/{uuid4()}", json={"is_blocked": True}, headers=admin_headers
+        )
+        assert response.status_code == 404
+
+    async def test_update_user_forbidden_for_regular_user(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, auth_headers: dict[str, str]
+    ) -> None:
+        user = User.create("targetuser2", "targetuser2@example.com", "hash")
+        fake_uow._store.users[user.id] = user
+        response = await client.patch(
+            f"/api/v1/users/{user.id}", json={"is_blocked": True}, headers=auth_headers
+        )
+        assert response.status_code == 403
+
+    async def test_login_rejected_for_blocked_user(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork, admin_headers: dict[str, str]
+    ) -> None:
+        user = User.create("blockeduser2", "blockeduser2@example.com", hash_password("password123"))
+        fake_uow._store.users[user.id] = user
+        block_resp = await client.patch(
+            f"/api/v1/users/{user.id}", json={"is_blocked": True}, headers=admin_headers
+        )
+        assert block_resp.status_code == 200
+        login_resp = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "blockeduser2@example.com", "password": "password123"},
+        )
+        assert login_resp.status_code == 403
 
 
 class TestPaymentsEndpoints:

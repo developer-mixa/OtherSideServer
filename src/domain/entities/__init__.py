@@ -27,6 +27,7 @@ class User:
     password_hash: str
     is_verified: bool = False
     role_id: UUID | None = None
+    is_blocked: bool = False
 
     @classmethod
     def create(
@@ -36,6 +37,7 @@ class User:
         password_hash: str,
         role_id: UUID | None = None,
         entity_id: UUID | None = None,
+        is_blocked: bool = False,
     ) -> User:
         return cls(
             id=entity_id or uuid4(),
@@ -43,6 +45,7 @@ class User:
             email=email,
             password_hash=password_hash,
             role_id=role_id,
+            is_blocked=is_blocked,
         )
 
 
