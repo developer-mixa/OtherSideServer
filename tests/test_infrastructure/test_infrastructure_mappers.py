@@ -71,10 +71,11 @@ class TestCompanyGameMapper:
 
 class TestSubscriptionPlanMapper:
     def test_round_trip(self) -> None:
-        entity = SubscriptionPlan.create("monthly", uuid4())
+        entity = SubscriptionPlan.create("monthly", uuid4(), duration_days=30)
         model = subscription_plan_entity_to_model(entity)
         restored = subscription_plan_model_to_entity(model)
         assert restored.type == "monthly"
+        assert restored.duration_days == 30
 
 
 class TestSubscriptionMapper:

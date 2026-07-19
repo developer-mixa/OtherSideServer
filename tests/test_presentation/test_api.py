@@ -140,11 +140,13 @@ class TestPlansEndpoints:
         fake_uow._store.company_games[game.id] = game
         response = await client.post(
             "/api/v1/plans",
-            json={"type": "monthly", "game_id": str(game.id)},
+            json={"type": "monthly", "game_id": str(game.id), "duration_days": 30},
             headers=admin_headers,
         )
         assert response.status_code == 201
-        assert response.json()["type"] == "monthly"
+        body = response.json()
+        assert body["type"] == "monthly"
+        assert body["duration_days"] == 30
 
     async def test_update_plan(
         self, client: AsyncClient, fake_uow: FakeUnitOfWork, admin_headers: dict[str, str]
@@ -153,13 +155,14 @@ class TestPlansEndpoints:
         fake_uow._store.subscription_plans[plan.id] = plan
         response = await client.patch(
             f"/api/v1/plans/{plan.id}",
-            json={"type": "yearly", "is_active": False},
+            json={"type": "yearly", "is_active": False, "duration_days": 365},
             headers=admin_headers,
         )
         assert response.status_code == 200
         body = response.json()
         assert body["type"] == "yearly"
         assert body["is_active"] is False
+        assert body["duration_days"] == 365
 
     async def test_update_plan_not_found(
         self, client: AsyncClient, admin_headers: dict[str, str]

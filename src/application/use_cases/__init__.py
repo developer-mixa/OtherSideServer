@@ -290,6 +290,7 @@ class CreateSubscriptionPlanUseCase:
                 dto.game_id,
                 price_amount=dto.price_amount,
                 is_active=dto.is_active,
+                duration_days=dto.duration_days,
             )
             await self._uow.subscription_plans.add(plan)
             await self._uow.commit()
@@ -319,6 +320,8 @@ class UpdateSubscriptionPlanUseCase:
                 plan.price_amount = dto.price_amount
             if dto.is_active is not None:
                 plan.is_active = dto.is_active
+            if dto.duration_days is not None:
+                plan.duration_days = dto.duration_days
             await self._uow.subscription_plans.update(plan)
             await self._uow.commit()
             return subscription_plan_to_dto(plan)

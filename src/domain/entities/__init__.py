@@ -66,6 +66,7 @@ class SubscriptionPlan:
     game_id: UUID | None = None
     price_amount: Decimal = Decimal("0.00")
     is_active: bool = True
+    duration_days: int | None = None
 
     @classmethod
     def create(
@@ -74,6 +75,7 @@ class SubscriptionPlan:
         game_id: UUID | None = None,
         price_amount: Decimal = Decimal("0.00"),
         is_active: bool = True,
+        duration_days: int | None = None,
         entity_id: UUID | None = None,
     ) -> SubscriptionPlan:
         return cls(
@@ -82,10 +84,14 @@ class SubscriptionPlan:
             game_id=game_id,
             price_amount=price_amount,
             is_active=is_active,
+            duration_days=duration_days,
         )
 
     def is_remove_ad(self) -> bool:
         return self.type.lower() == "remove_ad"
+
+    def is_permanent(self) -> bool:
+        return self.duration_days is None
 
 
 @dataclass

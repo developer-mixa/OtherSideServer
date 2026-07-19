@@ -48,6 +48,7 @@ async def create_plan(
         game_id=body.game_id,
         price_amount=body.price_amount,
         is_active=body.is_active,
+        duration_days=body.duration_days,
     )
     result = await use_case.execute(actor_id, dto)
     return subscription_plan_dto_to_response(result)
@@ -67,6 +68,7 @@ async def update_plan(
         game_id=body.game_id,
         price_amount=body.price_amount,
         is_active=body.is_active,
+        duration_days=body.duration_days,
     )
     result = await use_case.execute(actor_id, plan_id, dto)
     return subscription_plan_dto_to_response(result)

@@ -242,9 +242,10 @@ class TestSubscriptionPlanUseCases:
         admin = make_admin_user(uow._store)
         game = CompanyGame.create("Minecraft")
         uow._store.company_games[game.id] = game
-        dto = SubscriptionPlanCreateDTO(type="monthly", game_id=game.id)
+        dto = SubscriptionPlanCreateDTO(type="monthly", game_id=game.id, duration_days=30)
         result = await CreateSubscriptionPlanUseCase(uow).execute(admin.id, dto)
         assert result.type == "monthly"
+        assert result.duration_days == 30
 
     async def test_create_plan_missing_game(self, uow: FakeUnitOfWork) -> None:
         admin = make_admin_user(uow._store)
@@ -256,10 +257,11 @@ class TestSubscriptionPlanUseCases:
         admin = make_admin_user(uow._store)
         plan = SubscriptionPlan.create("monthly")
         uow._store.subscription_plans[plan.id] = plan
-        dto = SubscriptionPlanUpdateDTO(type="yearly", is_active=False)
+        dto = SubscriptionPlanUpdateDTO(type="yearly", is_active=False, duration_days=365)
         result = await UpdateSubscriptionPlanUseCase(uow).execute(admin.id, plan.id, dto)
         assert result.type == "yearly"
         assert result.is_active is False
+        assert result.duration_days == 365
 
     async def test_update_missing_plan(self, uow: FakeUnitOfWork) -> None:
         admin = make_admin_user(uow._store)

@@ -79,6 +79,7 @@ def subscription_plan_model_to_entity(model: SubscriptionPlanModel) -> Subscript
         game_id=model.game_id,
         price_amount=model.price_amount,
         is_active=model.is_active,
+        duration_days=model.duration_days,
     )
 
 
@@ -89,6 +90,7 @@ def subscription_plan_entity_to_model(entity: SubscriptionPlan) -> SubscriptionP
         game_id=entity.game_id,
         price_amount=entity.price_amount,
         is_active=entity.is_active,
+        duration_days=entity.duration_days,
     )
 
 

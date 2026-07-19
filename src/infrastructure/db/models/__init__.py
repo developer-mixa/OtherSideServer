@@ -60,6 +60,7 @@ class SubscriptionPlanModel(Base):
     type: Mapped[str] = mapped_column(String, nullable=False)
     price_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    duration_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     game: Mapped[CompanyGameModel | None] = relationship(back_populates="plans")
     subscriptions: Mapped[list[SubscriptionModel]] = relationship(back_populates="plan")

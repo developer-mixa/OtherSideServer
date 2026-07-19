@@ -51,6 +51,7 @@ class SubscriptionPlanResponse(BaseModel):
     game_id: UUID | None = None
     price_amount: Decimal = Decimal("0.00")
     is_active: bool = True
+    duration_days: int | None = None
 
     model_config = ConfigDict(from_attributes=True, json_encoders={Decimal: str})
 

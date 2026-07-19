@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -46,15 +46,14 @@ class InitiatePaymentUseCase:
                 raise EntityNotFoundError("SubscriptionPlan", dto.plan_id)
             if not plan.is_active:
                 raise ValidationError("Subscription plan is not available for purchase")
-            if not plan.is_remove_ad():
-                raise ValidationError("Only remove_ad plans are supported for now")
             if plan.price_amount <= Decimal("0"):
                 raise ValidationError("Plan price is not configured")
 
-            permanent = await self._uow.subscriptions.get_permanent_by_user_and_plan(
-                user_id, plan.id
+            current = await self._uow.subscriptions.get_current_by_user_and_plan(
+                user_id, plan.id, date.today()
             )
-            if permanent is not None:
+            if current is not None and current.active_until is None:
+                # Already has a permanent subscription to this plan — nothing to buy.
                 raise DuplicateEntityError("Subscription", "plan_id", str(plan.id))
 
             invoice_id = await self._generate_unique_invoice_id()
@@ -85,7 +84,7 @@ class InitiatePaymentUseCase:
             payment_url = self._robokassa.build_payment_url(
                 invoice_id=invoice_id,
                 amount=plan.price_amount,
-                description=f"Remove ads — {plan.type}",
+                description=f"{plan.type} plan",
             )
             return PaymentInitResultDTO(
                 payment_id=payment.id,
@@ -107,7 +106,7 @@ class InitiatePaymentUseCase:
         payment_url = self._robokassa.build_payment_url(
             invoice_id=payment.robokassa_invoice_id,
             amount=payment.amount,
-            description="Remove ads",
+            description="OtherSide subscription payment",
         )
         return PaymentInitResultDTO(
             payment_id=payment.id,
@@ -135,7 +134,7 @@ class GetPaymentUseCase:
 
 
 class ProcessRobokassaWebhookUseCase:
-    """Verify Robokassa Result URL callback and fulfill paid remove_ad purchases."""
+    """Verify Robokassa Result URL callback and grant/extend the purchased subscription."""
 
     def __init__(self, uow: UnitOfWorkProtocol, robokassa: RobokassaClient) -> None:
         self._uow = uow
@@ -203,10 +202,13 @@ class ProcessRobokassaWebhookUseCase:
             payment.mark_paid(now)
             await self._uow.payments.update(payment)
 
-            existing = await self._uow.subscriptions.get_permanent_by_user_and_plan(
-                payment.user_id, payment.plan_id
+            today = now.date()
+            existing = await self._uow.subscriptions.get_current_by_user_and_plan(
+                payment.user_id, payment.plan_id, today
             )
-            if existing is None:
+            if existing is not None and existing.active_until is None:
+                pass  # already permanent — nothing to grant/extend
+            elif plan.duration_days is None:
                 subscription = Subscription.create(
                     user_id=payment.user_id,
                     plan_id=payment.plan_id,
@@ -214,6 +216,26 @@ class ProcessRobokassaWebhookUseCase:
                     source_payment_id=payment.id,
                 )
                 await self._uow.subscriptions.add(subscription)
+            else:
+                current_active_until = existing.active_until if existing is not None else None
+                base_date = (
+                    current_active_until
+                    if current_active_until is not None and current_active_until >= today
+                    else today
+                )
+                new_active_until = base_date + timedelta(days=plan.duration_days)
+                if existing is not None:
+                    existing.active_until = new_active_until
+                    existing.source_payment_id = payment.id
+                    await self._uow.subscriptions.update(existing)
+                else:
+                    subscription = Subscription.create(
+                        user_id=payment.user_id,
+                        plan_id=payment.plan_id,
+                        active_until=new_active_until,
+                        source_payment_id=payment.id,
+                    )
+                    await self._uow.subscriptions.add(subscription)
 
             await self._uow.payment_events.add(
                 PaymentEvent.create(

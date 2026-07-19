@@ -1,5 +1,6 @@
 """Payment use case tests."""
 
+from datetime import date, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -27,6 +28,15 @@ def robokassa() -> RobokassaClient:
 @pytest.fixture
 def remove_ad_plan(fake_uow: FakeUnitOfWork) -> SubscriptionPlan:
     plan = SubscriptionPlan.create("remove_ad", price_amount=Decimal("499.00"))
+    fake_uow._store.subscription_plans[plan.id] = plan
+    return plan
+
+
+@pytest.fixture
+def monthly_plan(fake_uow: FakeUnitOfWork) -> SubscriptionPlan:
+    plan = SubscriptionPlan.create(
+        "premium_monthly", price_amount=Decimal("199.00"), duration_days=30
+    )
     fake_uow._store.subscription_plans[plan.id] = plan
     return plan
 
@@ -75,6 +85,26 @@ class TestInitiatePaymentUseCase:
                 PaymentInitDTO(plan_id=remove_ad_plan.id, idempotency_key="key-2"),
             )
 
+    async def test_allows_renewal_of_active_limited_subscription(
+        self,
+        fake_uow: FakeUnitOfWork,
+        robokassa: RobokassaClient,
+        paying_user: User,
+        monthly_plan: SubscriptionPlan,
+    ) -> None:
+        sub = Subscription.create(
+            user_id=paying_user.id,
+            plan_id=monthly_plan.id,
+            active_until=date.today() + timedelta(days=10),
+        )
+        fake_uow._store.subscriptions[sub.id] = sub
+        use_case = InitiatePaymentUseCase(fake_uow, robokassa)
+        result = await use_case.execute(
+            paying_user.id,
+            PaymentInitDTO(plan_id=monthly_plan.id, idempotency_key="key-renew"),
+        )
+        assert result.status == "pending"
+
 
 class TestProcessRobokassaWebhookUseCase:
     async def test_fulfills_payment_and_grants_subscription(
@@ -94,7 +124,7 @@ class TestProcessRobokassaWebhookUseCase:
         )
         fake_uow._store.payments[payment.id] = payment
 
-        signature = hashlib.md5("499.00:2001:pass2".encode()).hexdigest()
+        signature = hashlib.md5(b"499.00:2001:pass2").hexdigest()
         use_case = ProcessRobokassaWebhookUseCase(fake_uow, robokassa)
         response = await use_case.execute(
             {
@@ -131,7 +161,7 @@ class TestProcessRobokassaWebhookUseCase:
             idempotency_key="key-4",
         )
         fake_uow._store.payments[payment.id] = payment
-        signature = hashlib.md5("499.00:2002:pass2".encode()).hexdigest()
+        signature = hashlib.md5(b"499.00:2002:pass2").hexdigest()
         use_case = ProcessRobokassaWebhookUseCase(fake_uow, robokassa)
         response = await use_case.execute(
             {
@@ -142,6 +172,78 @@ class TestProcessRobokassaWebhookUseCase:
         )
         assert response == "OK2002"
         assert len(fake_uow._store.subscriptions) == 0
+
+    async def test_grants_limited_subscription_for_duration_plan(
+        self,
+        fake_uow: FakeUnitOfWork,
+        robokassa: RobokassaClient,
+        paying_user: User,
+        monthly_plan: SubscriptionPlan,
+    ) -> None:
+        payment = Payment.create(
+            user_id=paying_user.id,
+            plan_id=monthly_plan.id,
+            amount=Decimal("199.00"),
+            status="pending",
+            robokassa_invoice_id="3101",
+            idempotency_key="key-monthly-1",
+        )
+        fake_uow._store.payments[payment.id] = payment
+
+        signature = hashlib.md5(b"199.00:3101:pass2").hexdigest()
+        use_case = ProcessRobokassaWebhookUseCase(fake_uow, robokassa)
+        await use_case.execute(
+            {"OutSum": "199.00", "InvId": "3101", "SignatureValue": signature}
+        )
+
+        subs = [
+            s
+            for s in fake_uow._store.subscriptions.values()
+            if s.user_id == paying_user.id and s.plan_id == monthly_plan.id
+        ]
+        assert len(subs) == 1
+        assert subs[0].active_until == date.today() + timedelta(days=30)
+        assert subs[0].source_payment_id == payment.id
+
+    async def test_renewal_extends_from_current_expiry_not_from_today(
+        self,
+        fake_uow: FakeUnitOfWork,
+        robokassa: RobokassaClient,
+        paying_user: User,
+        monthly_plan: SubscriptionPlan,
+    ) -> None:
+        existing_expiry = date.today() + timedelta(days=10)
+        sub = Subscription.create(
+            user_id=paying_user.id,
+            plan_id=monthly_plan.id,
+            active_until=existing_expiry,
+        )
+        fake_uow._store.subscriptions[sub.id] = sub
+
+        payment = Payment.create(
+            user_id=paying_user.id,
+            plan_id=monthly_plan.id,
+            amount=Decimal("199.00"),
+            status="pending",
+            robokassa_invoice_id="3102",
+            idempotency_key="key-monthly-2",
+        )
+        fake_uow._store.payments[payment.id] = payment
+
+        signature = hashlib.md5(b"199.00:3102:pass2").hexdigest()
+        use_case = ProcessRobokassaWebhookUseCase(fake_uow, robokassa)
+        await use_case.execute(
+            {"OutSum": "199.00", "InvId": "3102", "SignatureValue": signature}
+        )
+
+        subs = [
+            s
+            for s in fake_uow._store.subscriptions.values()
+            if s.user_id == paying_user.id and s.plan_id == monthly_plan.id
+        ]
+        assert len(subs) == 1
+        assert subs[0].active_until == existing_expiry + timedelta(days=30)
+        assert subs[0].source_payment_id == payment.id
 
     async def test_invalid_signature_raises(
         self,

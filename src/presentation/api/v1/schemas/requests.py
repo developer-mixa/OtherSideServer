@@ -37,6 +37,7 @@ class SubscriptionPlanCreateRequest(BaseModel):
     game_id: UUID | None = None
     price_amount: Decimal = Field(default=Decimal("0.00"), ge=0, decimal_places=2)
     is_active: bool = True
+    duration_days: int | None = Field(default=None, ge=1)
 
     model_config = ConfigDict(json_encoders={Decimal: str})
 
@@ -46,6 +47,7 @@ class SubscriptionPlanUpdateRequest(BaseModel):
     game_id: UUID | None = None
     price_amount: Decimal | None = Field(default=None, ge=0, decimal_places=2)
     is_active: bool | None = None
+    duration_days: int | None = Field(default=None, ge=1)
 
     model_config = ConfigDict(json_encoders={Decimal: str})
 

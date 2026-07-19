@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import date
 from uuid import UUID, uuid4
 
 import pytest
@@ -186,17 +187,22 @@ class FakeSubscriptionRepo:
     async def get_by_user(self, user_id: UUID) -> list[Subscription]:
         return [s for s in self._store.subscriptions.values() if s.user_id == user_id]
 
-    async def get_permanent_by_user_and_plan(
-        self, user_id: UUID, plan_id: UUID
+    async def get_current_by_user_and_plan(
+        self, user_id: UUID, plan_id: UUID, on_date: date
     ) -> Subscription | None:
-        return next(
-            (
-                s
-                for s in self._store.subscriptions.values()
-                if s.user_id == user_id and s.plan_id == plan_id and s.active_until is None
-            ),
-            None,
-        )
+        candidates = [
+            s
+            for s in self._store.subscriptions.values()
+            if s.user_id == user_id
+            and s.plan_id == plan_id
+            and (s.active_until is None or s.active_until >= on_date)
+        ]
+        if not candidates:
+            return None
+        permanent = next((s for s in candidates if s.active_until is None), None)
+        if permanent is not None:
+            return permanent
+        return max(candidates, key=lambda s: s.active_until)
 
     async def add(self, entity: Subscription) -> Subscription:
         self._store.subscriptions[entity.id] = entity

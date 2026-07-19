@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.unit_of_work import EntityState, IdentityMap
@@ -242,15 +243,24 @@ class SqlAlchemySubscriptionRepository:
         )
         return [subscription_model_to_entity(m) for m in result.scalars().all()]
 
-    async def get_permanent_by_user_and_plan(
-        self, user_id: UUID, plan_id: UUID
+    async def get_current_by_user_and_plan(
+        self, user_id: UUID, plan_id: UUID, on_date: date
     ) -> Subscription | None:
         result = await self._session.execute(
-            select(SubscriptionModel).where(
+            select(SubscriptionModel)
+            .where(
                 SubscriptionModel.user_id == user_id,
                 SubscriptionModel.plan_id == plan_id,
-                SubscriptionModel.active_until.is_(None),
+                or_(
+                    SubscriptionModel.active_until.is_(None),
+                    SubscriptionModel.active_until >= on_date,
+                ),
             )
+            .order_by(
+                SubscriptionModel.active_until.is_(None).desc(),
+                SubscriptionModel.active_until.desc(),
+            )
+            .limit(1)
         )
         model = result.scalar_one_or_none()
         return subscription_model_to_entity(model) if model else None

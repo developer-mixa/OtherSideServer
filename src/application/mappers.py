@@ -56,6 +56,7 @@ def subscription_plan_to_dto(entity: SubscriptionPlan) -> SubscriptionPlanDTO:
         game_id=entity.game_id,
         price_amount=entity.price_amount,
         is_active=entity.is_active,
+        duration_days=entity.duration_days,
     )
 
 

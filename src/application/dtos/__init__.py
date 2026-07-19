@@ -70,6 +70,7 @@ class SubscriptionPlanDTO:
     game_id: UUID | None = None
     price_amount: Decimal = Decimal("0.00")
     is_active: bool = True
+    duration_days: int | None = None
 
 
 @dataclass(slots=True)
@@ -78,6 +79,7 @@ class SubscriptionPlanCreateDTO:
     game_id: UUID | None = None
     price_amount: Decimal = Decimal("0.00")
     is_active: bool = True
+    duration_days: int | None = None
 
 
 @dataclass(slots=True)
@@ -86,6 +88,7 @@ class SubscriptionPlanUpdateDTO:
     game_id: UUID | None = None
     price_amount: Decimal | None = None
     is_active: bool | None = None
+    duration_days: int | None = None
 
 
 @dataclass(slots=True)
