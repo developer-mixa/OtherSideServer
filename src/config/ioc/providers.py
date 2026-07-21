@@ -57,7 +57,13 @@ class AppProvider(Provider):
 
     @provide(scope=Scope.APP)
     def engine(self) -> async_sessionmaker[AsyncSession]:
-        engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
+        engine = create_async_engine(
+            settings.DATABASE_URL,
+            pool_pre_ping=True,
+            pool_size=settings.DB_POOL_SIZE,
+            max_overflow=settings.DB_MAX_OVERFLOW,
+            pool_recycle=settings.DB_POOL_RECYCLE_SECONDS,
+        )
         return async_sessionmaker(engine, expire_on_commit=False)
 
     @provide(scope=Scope.REQUEST)

@@ -9,7 +9,10 @@ services:
       - .env
     ports:
       - "127.0.0.1:8000:8000"
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    # UVICORN_WORKERS (.env, default 2): each worker is a separate process with its own DB
+    # pool and its own in-memory rate-limiter counters — see the comment in .env.example
+    # before raising this past what the host's vCPU count and RATE_LIMIT_* settings can absorb.
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2}
 
   db:
     image: postgres:16

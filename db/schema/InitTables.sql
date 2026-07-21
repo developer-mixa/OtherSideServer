@@ -70,6 +70,14 @@ CREATE TABLE IF NOT EXISTS payment_events (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE INDEX IF NOT EXISTS ix_payments_user_id ON payments (user_id);
+
+CREATE INDEX IF NOT EXISTS ix_subscriptions_user_id ON subscriptions (user_id);
+
+CREATE INDEX IF NOT EXISTS ix_payment_events_unprocessed
+    ON payment_events (payment_id)
+    WHERE processed IS FALSE;
+
 CREATE TABLE IF NOT EXISTS system_settings (
     id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
     maintenance_mode BOOLEAN NOT NULL DEFAULT false

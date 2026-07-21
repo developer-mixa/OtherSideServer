@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     JWT_ALG: str = "HS256"
 
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/app"
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_RECYCLE_SECONDS: int = 1800
     CORS_ORIGINS: list[str] = ["*"]
 
     BOOTSTRAP_ADMIN_USERNAME: str = ""
