@@ -1,9 +1,13 @@
-# Deploy configs (nginx, fail2ban)
+# Deploy configs (nginx, fail2ban, monitoring)
 
 These files mirror what's actually applied on the prod server. Nginx and fail2ban run
 directly on the host, outside docker-compose, so there's no automated sync — when you
 change one of these files, copy it to the server by hand and reload the relevant
 service. See `../DEPLOY-SELECTEL.md` (Часть 5 и Часть 7) for the full setup walkthrough.
+
+`monitoring/` is different: it runs *inside* `docker-compose.prod.yml` (Prometheus,
+Grafana, node-exporter, cAdvisor), so it comes up automatically with `docker compose up`.
+See `monitoring/README.md` for access (SSH tunnel only, nothing public).
 
 ## nginx/otherside-api.conf
 
