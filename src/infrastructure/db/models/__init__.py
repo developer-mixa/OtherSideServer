@@ -35,6 +35,8 @@ class UserModel(Base):
     role_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("roles.id", ondelete="SET NULL")
     )
+    consent_personal_data: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    consent_personal_data_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     role: Mapped[RoleModel | None] = relationship(back_populates="users")
     subscriptions: Mapped[list[SubscriptionModel]] = relationship(back_populates="user")

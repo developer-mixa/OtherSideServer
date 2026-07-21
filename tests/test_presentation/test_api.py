@@ -24,12 +24,36 @@ class TestAuthEndpoints:
                 "username": "newuser",
                 "email": "new@example.com",
                 "password": "password123",
+                "consent_personal_data": True,
             },
         )
         assert response.status_code == 201
         data = response.json()
         assert data["username"] == "newuser"
         assert data["email"] == "new@example.com"
+
+    async def test_register_requires_consent_field(self, client: AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "noconsentfield",
+                "email": "noconsentfield@example.com",
+                "password": "password123",
+            },
+        )
+        assert response.status_code == 422
+
+    async def test_register_rejects_false_consent(self, client: AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "noconsent",
+                "email": "noconsent@example.com",
+                "password": "password123",
+                "consent_personal_data": False,
+            },
+        )
+        assert response.status_code == 422
 
     async def test_login(self, client: AsyncClient, fake_uow: FakeUnitOfWork) -> None:
         user = User.create("loginuser", "login@example.com", hash_password("password123"))

@@ -49,6 +49,8 @@ def user_model_to_entity(model: UserModel) -> User:
         is_verified=model.is_verified,
         role_id=model.role_id,
         is_blocked=model.is_blocked,
+        consent_personal_data=bool(model.consent_personal_data),
+        consent_personal_data_at=model.consent_personal_data_at,
     )
 
 
@@ -61,6 +63,8 @@ def user_entity_to_model(entity: User) -> UserModel:
         is_verified=entity.is_verified,
         role_id=entity.role_id,
         is_blocked=entity.is_blocked,
+        consent_personal_data=entity.consent_personal_data,
+        consent_personal_data_at=entity.consent_personal_data_at,
     )
 
 

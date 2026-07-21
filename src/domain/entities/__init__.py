@@ -28,6 +28,8 @@ class User:
     is_verified: bool = False
     role_id: UUID | None = None
     is_blocked: bool = False
+    consent_personal_data: bool = False
+    consent_personal_data_at: datetime | None = None
 
     @classmethod
     def create(
@@ -38,6 +40,8 @@ class User:
         role_id: UUID | None = None,
         entity_id: UUID | None = None,
         is_blocked: bool = False,
+        consent_personal_data: bool = False,
+        consent_personal_data_at: datetime | None = None,
     ) -> User:
         return cls(
             id=entity_id or uuid4(),
@@ -46,6 +50,8 @@ class User:
             password_hash=password_hash,
             role_id=role_id,
             is_blocked=is_blocked,
+            consent_personal_data=consent_personal_data,
+            consent_personal_data_at=consent_personal_data_at,
         )
 
 

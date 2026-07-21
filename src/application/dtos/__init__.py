@@ -30,6 +30,7 @@ class UserCreateDTO:
     username: str
     email: str
     password: str
+    consent_personal_data: bool
 
 
 @dataclass(slots=True)

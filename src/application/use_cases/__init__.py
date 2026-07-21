@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -73,6 +73,9 @@ class RegisterUserUseCase:
         self._uow = uow
 
     async def execute(self, dto: UserCreateDTO) -> UserDTO:
+        if not dto.consent_personal_data:
+            raise ValidationError("Consent to personal data processing is required")
+
         username = Username(dto.username)
         email = Email(dto.email)
         Password(dto.password)
@@ -92,6 +95,8 @@ class RegisterUserUseCase:
                 email=email.value,
                 password_hash=hash_password(dto.password),
                 role_id=default_role.id,
+                consent_personal_data=True,
+                consent_personal_data_at=datetime.now(timezone.utc),
             )
             await self._uow.users.add(user)
             await self._uow.commit()

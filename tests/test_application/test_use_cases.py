@@ -61,7 +61,12 @@ def uow() -> FakeUnitOfWork:
 class TestRegisterUserUseCase:
     async def test_register_success(self, uow: FakeUnitOfWork) -> None:
         use_case = RegisterUserUseCase(uow)
-        dto = UserCreateDTO(username="newuser", email="new@example.com", password="password123")
+        dto = UserCreateDTO(
+            username="newuser",
+            email="new@example.com",
+            password="password123",
+            consent_personal_data=True,
+        )
         result = await use_case.execute(dto)
         assert result.username == "newuser"
         assert result.email == "new@example.com"
@@ -69,7 +74,12 @@ class TestRegisterUserUseCase:
 
     async def test_register_always_assigns_user_role(self, uow: FakeUnitOfWork) -> None:
         use_case = RegisterUserUseCase(uow)
-        dto = UserCreateDTO(username="plainuser", email="plain@example.com", password="password123")
+        dto = UserCreateDTO(
+            username="plainuser",
+            email="plain@example.com",
+            password="password123",
+            consent_personal_data=True,
+        )
         result = await use_case.execute(dto)
         user_role = await uow.roles.get_by_name("user")
         assert user_role is not None
@@ -79,8 +89,24 @@ class TestRegisterUserUseCase:
         user = User.create("existing", "dup@example.com", "hash")
         uow._store.users[user.id] = user
         use_case = RegisterUserUseCase(uow)
-        dto = UserCreateDTO(username="other", email="dup@example.com", password="password123")
+        dto = UserCreateDTO(
+            username="other",
+            email="dup@example.com",
+            password="password123",
+            consent_personal_data=True,
+        )
         with pytest.raises(DuplicateEntityError):
+            await use_case.execute(dto)
+
+    async def test_register_requires_consent(self, uow: FakeUnitOfWork) -> None:
+        use_case = RegisterUserUseCase(uow)
+        dto = UserCreateDTO(
+            username="noconsent",
+            email="noconsent@example.com",
+            password="password123",
+            consent_personal_data=False,
+        )
+        with pytest.raises(ValidationError):
             await use_case.execute(dto)
 
 
