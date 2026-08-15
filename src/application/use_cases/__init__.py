@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -29,7 +30,7 @@ from application.dtos import (
     UserDTO,
     UserUpdateDTO,
 )
-from application.interfaces import UnitOfWorkProtocol
+from application.interfaces import EmailSenderProtocol, UnitOfWorkProtocol
 from application.mappers import (
     company_game_to_dto,
     payment_to_dto,
@@ -45,7 +46,15 @@ from application.use_cases.payments import (
     ProcessRobokassaWebhookUseCase,
 )
 from application.users import build_user_dto
-from config.security import create_access_token, hash_password, verify_password
+from config.security import (
+    create_access_token,
+    generate_verification_code,
+    hash_password,
+    hash_verification_code,
+    verify_password,
+    verify_verification_code,
+)
+from config.settings import settings
 from domain.entities import (
     CompanyGame,
     Payment,
@@ -59,18 +68,22 @@ from domain.exceptions import (
     AuthenticationError,
     AuthorizationError,
     DuplicateEntityError,
+    EmailNotVerifiedError,
     EntityNotFoundError,
     ValidationError,
 )
 from domain.value_objects import Email, Password, Username
 from infrastructure.cache.maintenance_cache import MaintenanceModeCache
 
+logger = logging.getLogger(__name__)
+
 
 class RegisterUserUseCase:
-    """Register a new user with hashed password."""
+    """Register a new user with hashed password and send an email verification code."""
 
-    def __init__(self, uow: UnitOfWorkProtocol) -> None:
+    def __init__(self, uow: UnitOfWorkProtocol, email_sender: EmailSenderProtocol) -> None:
         self._uow = uow
+        self._email_sender = email_sender
 
     async def execute(self, dto: UserCreateDTO) -> UserDTO:
         if not dto.consent_personal_data:
@@ -90,6 +103,7 @@ class RegisterUserUseCase:
             if default_role is None:
                 raise EntityNotFoundError("Role", USER_ROLE_NAME)
 
+            code = generate_verification_code()
             user = User.create(
                 username=username.value,
                 email=email.value,
@@ -98,9 +112,20 @@ class RegisterUserUseCase:
                 consent_personal_data=True,
                 consent_personal_data_at=datetime.now(timezone.utc),
             )
+            user.verification_code_hash = hash_verification_code(code)
+            user.verification_code_expires_at = datetime.now(timezone.utc) + timedelta(
+                minutes=settings.EMAIL_VERIFICATION_CODE_TTL_MINUTES
+            )
             await self._uow.users.add(user)
             await self._uow.commit()
-            return await build_user_dto(self._uow, user)
+            result = await build_user_dto(self._uow, user)
+
+        try:
+            await self._email_sender.send_verification_code(to_email=user.email, code=code)
+        except Exception:
+            logger.exception("Failed to send verification email to %s", user.email)
+
+        return result
 
 
 class LoginUserUseCase:
@@ -118,9 +143,82 @@ class LoginUserUseCase:
                 raise AuthenticationError()
             if user.is_blocked:
                 raise AuthorizationError("User is blocked")
+            if not user.is_verified:
+                raise EmailNotVerifiedError()
 
             token = create_access_token({"sub": str(user.id)})
             return AuthTokenDTO(access_token=token)
+
+
+class VerifyEmailUseCase:
+    """Confirm a user's email address using the code sent at registration."""
+
+    def __init__(self, uow: UnitOfWorkProtocol) -> None:
+        self._uow = uow
+
+    async def execute(self, email: str, code: str) -> UserDTO:
+        normalized_email = Email(email).value
+
+        async with self._uow:
+            user = await self._uow.users.get_by_email(normalized_email)
+            if user is None:
+                raise EntityNotFoundError("User", normalized_email)
+            if user.is_verified:
+                raise ValidationError("Email is already verified")
+            if (
+                user.verification_code_hash is None
+                or user.verification_code_expires_at is None
+                or datetime.now(timezone.utc) > user.verification_code_expires_at
+            ):
+                raise ValidationError("Verification code has expired. Request a new one.")
+            if user.verification_attempts >= settings.EMAIL_VERIFICATION_MAX_ATTEMPTS:
+                raise ValidationError("Too many attempts. Request a new code.")
+
+            if not verify_verification_code(code, user.verification_code_hash):
+                user.verification_attempts += 1
+                await self._uow.users.update(user)
+                await self._uow.commit()
+                raise ValidationError("Invalid verification code")
+
+            user.is_verified = True
+            user.verification_code_hash = None
+            user.verification_code_expires_at = None
+            user.verification_attempts = 0
+            await self._uow.users.update(user)
+            await self._uow.commit()
+            return await build_user_dto(self._uow, user)
+
+
+class ResendVerificationCodeUseCase:
+    """Issue a fresh email verification code for an unverified user."""
+
+    def __init__(self, uow: UnitOfWorkProtocol, email_sender: EmailSenderProtocol) -> None:
+        self._uow = uow
+        self._email_sender = email_sender
+
+    async def execute(self, email: str) -> None:
+        normalized_email = Email(email).value
+
+        async with self._uow:
+            user = await self._uow.users.get_by_email(normalized_email)
+            if user is None:
+                raise EntityNotFoundError("User", normalized_email)
+            if user.is_verified:
+                raise ValidationError("Email is already verified")
+
+            code = generate_verification_code()
+            user.verification_code_hash = hash_verification_code(code)
+            user.verification_code_expires_at = datetime.now(timezone.utc) + timedelta(
+                minutes=settings.EMAIL_VERIFICATION_CODE_TTL_MINUTES
+            )
+            user.verification_attempts = 0
+            await self._uow.users.update(user)
+            await self._uow.commit()
+
+        try:
+            await self._email_sender.send_verification_code(to_email=normalized_email, code=code)
+        except Exception:
+            logger.exception("Failed to send verification email to %s", normalized_email)
 
 
 class GetCurrentUserUseCase:

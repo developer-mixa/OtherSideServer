@@ -1,7 +1,10 @@
-"""JWT and password hashing utilities."""
+"""JWT, password hashing, and email verification code utilities."""
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
@@ -51,3 +54,18 @@ def get_user_id_from_token(token: str) -> UUID:
     if sub is None:
         raise AuthenticationError("Token missing subject")
     return UUID(sub)
+
+
+def generate_verification_code() -> str:
+    """Generate a random 6-digit email verification code."""
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def hash_verification_code(code: str) -> str:
+    """Hash a verification code for storage."""
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def verify_verification_code(code: str, code_hash: str) -> bool:
+    """Constant-time comparison of a submitted code against its stored hash."""
+    return hmac.compare_digest(hash_verification_code(code), code_hash)

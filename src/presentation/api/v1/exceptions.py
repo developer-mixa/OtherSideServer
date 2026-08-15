@@ -12,6 +12,7 @@ from domain.exceptions import (
     AuthorizationError,
     DomainError,
     DuplicateEntityError,
+    EmailNotVerifiedError,
     EntityNotFoundError,
     PaymentVerificationError,
     ValidationError,
@@ -53,6 +54,13 @@ def register_exception_handlers(app: FastAPI) -> None:
             content=ErrorResponse(detail=exc.message, code="authorization_error").model_dump(),
         )
 
+    @app.exception_handler(EmailNotVerifiedError)
+    async def email_not_verified_handler(_: Request, exc: EmailNotVerifiedError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            content=ErrorResponse(detail=exc.message, code="email_not_verified").model_dump(),
+        )
+
     @app.exception_handler(ValidationError)
     async def validation_handler(_: Request, exc: ValidationError) -> JSONResponse:
         return JSONResponse(
@@ -66,7 +74,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
-            content=ErrorResponse(detail=exc.message, code="payment_verification_error").model_dump(),
+            content=ErrorResponse(
+                detail=exc.message, code="payment_verification_error"
+            ).model_dump(),
         )
 
     @app.exception_handler(DomainError)
@@ -82,5 +92,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         logger.exception("Unhandled exception")
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=ErrorResponse(detail="Internal server error", code="internal_error").model_dump(),
+            content=ErrorResponse(
+                detail="Internal server error", code="internal_error"
+            ).model_dump(),
         )

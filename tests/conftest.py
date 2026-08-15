@@ -37,12 +37,14 @@ from application.use_cases import (
     LoginUserUseCase,
     ProcessRobokassaWebhookUseCase,
     RegisterUserUseCase,
+    ResendVerificationCodeUseCase,
     SetMaintenanceModeUseCase,
     UpdateCompanyGameUseCase,
     UpdatePromocodeUseCase,
     UpdateSubscriptionPlanUseCase,
     UpdateSubscriptionUseCase,
     UpdateUserUseCase,
+    VerifyEmailUseCase,
 )
 from config.settings import settings
 from infrastructure.payments.robokassa import RobokassaClient
@@ -304,6 +306,16 @@ class FakeSystemSettingsRepo:
         return self._store.system_settings
 
 
+class FakeEmailSender:
+    """Captures sent verification codes instead of talking to real SMTP."""
+
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str]] = []
+
+    async def send_verification_code(self, *, to_email: str, code: str) -> None:
+        self.sent.append((to_email, code))
+
+
 class FakeUnitOfWork:
     """In-memory UoW for API and application tests."""
 
@@ -335,9 +347,10 @@ class FakeUnitOfWork:
 
 
 class TestProvider(Provider):
-    def __init__(self, uow: FakeUnitOfWork) -> None:
+    def __init__(self, uow: FakeUnitOfWork, email_sender: FakeEmailSender | None = None) -> None:
         super().__init__()
         self._uow = uow
+        self._email_sender = email_sender or FakeEmailSender()
         self._robokassa = RobokassaClient(
             merchant_login=settings.ROBOKASSA_MERCHANT_LOGIN or "test_merchant",
             password1=settings.ROBOKASSA_PASSWORD1 or "password1",
@@ -351,11 +364,19 @@ class TestProvider(Provider):
 
     @provide(scope=Scope.REQUEST)
     def register_user(self) -> RegisterUserUseCase:
-        return RegisterUserUseCase(self._uow)
+        return RegisterUserUseCase(self._uow, self._email_sender)
 
     @provide(scope=Scope.REQUEST)
     def login_user(self) -> LoginUserUseCase:
         return LoginUserUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def verify_email(self) -> VerifyEmailUseCase:
+        return VerifyEmailUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def resend_verification_code(self) -> ResendVerificationCodeUseCase:
+        return ResendVerificationCodeUseCase(self._uow, self._email_sender)
 
     @provide(scope=Scope.REQUEST)
     def get_current_user(self) -> GetCurrentUserUseCase:
@@ -481,11 +502,18 @@ def fake_uow(fake_store: InMemoryStore) -> FakeUnitOfWork:
 
 
 @pytest.fixture
-async def client(fake_uow: FakeUnitOfWork) -> AsyncIterator[AsyncClient]:
+def fake_email_sender() -> FakeEmailSender:
+    return FakeEmailSender()
+
+
+@pytest.fixture
+async def client(
+    fake_uow: FakeUnitOfWork, fake_email_sender: FakeEmailSender
+) -> AsyncIterator[AsyncClient]:
     from dishka.integrations.fastapi import setup_dishka
 
     app = create_app()
-    container = make_async_container(TestProvider(fake_uow))
+    container = make_async_container(TestProvider(fake_uow, fake_email_sender))
     setup_dishka(container, app)
 
     transport = ASGITransport(app=app)

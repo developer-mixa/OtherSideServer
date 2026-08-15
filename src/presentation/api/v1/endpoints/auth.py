@@ -4,14 +4,25 @@ from typing import Annotated
 
 from dishka import FromDishka
 from dishka.integrations.fastapi import inject
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials
 
 from application.dtos import UserCreateDTO
-from application.use_cases import GetCurrentUserUseCase, LoginUserUseCase, RegisterUserUseCase
+from application.use_cases import (
+    GetCurrentUserUseCase,
+    LoginUserUseCase,
+    RegisterUserUseCase,
+    ResendVerificationCodeUseCase,
+    VerifyEmailUseCase,
+)
 from config.deps import bearer_scheme, resolve_user_id
 from presentation.api.v1.mappers import token_dto_to_response, user_dto_to_response
-from presentation.api.v1.schemas.requests import LoginRequest, RegisterRequest
+from presentation.api.v1.schemas.requests import (
+    LoginRequest,
+    RegisterRequest,
+    ResendVerificationRequest,
+    VerifyEmailRequest,
+)
 from presentation.api.v1.schemas.responses import TokenResponse, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -31,6 +42,25 @@ async def register(
     )
     result = await use_case.execute(dto)
     return user_dto_to_response(result)
+
+
+@router.post("/verify-email", response_model=UserResponse)
+@inject
+async def verify_email(
+    body: VerifyEmailRequest,
+    use_case: FromDishka[VerifyEmailUseCase],
+) -> UserResponse:
+    result = await use_case.execute(body.email, body.code)
+    return user_dto_to_response(result)
+
+
+@router.post("/resend-verification", status_code=status.HTTP_204_NO_CONTENT)
+@inject
+async def resend_verification(
+    body: ResendVerificationRequest,
+    use_case: FromDishka[ResendVerificationCodeUseCase],
+) -> None:
+    await use_case.execute(body.email)
 
 
 @router.post("/login", response_model=TokenResponse)

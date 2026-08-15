@@ -14,6 +14,7 @@ Production-ready FastAPI backend with Clean Architecture, PostgreSQL, JWT auth, 
   - [Promoting an additional user to admin](#promoting-an-additional-user-to-admin)
 - [Environment Variables](#environment-variables)
 - [Robokassa merchant setup](#robokassa-merchant-setup)
+- [Настройка email-верификации (Selectel)](#настройка-email-верификации-selectel)
 - [Database Schema](#database-schema)
 - [Testing](#testing)
 - [Pre-commit](#pre-commit)
@@ -83,8 +84,10 @@ make dev       # start uvicorn with hot reload
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/auth/register` | No | Register user |
-| POST | `/auth/login` | No | Get JWT token |
+| POST | `/auth/register` | No | Register user, sends email verification code |
+| POST | `/auth/verify-email` | No | Confirm email with the 6-digit code |
+| POST | `/auth/resend-verification` | No | Send a new verification code |
+| POST | `/auth/login` | No | Get JWT token (requires verified email) |
 | GET | `/auth/me` | Yes | Current user |
 | GET/POST | `/roles` | Admin | List/create roles |
 | GET/POST/DELETE | `/games` | Admin | Company games CRUD |
@@ -164,6 +167,15 @@ still need a page refresh to refetch `/auth/me` and show the admin UI.
 | `BOOTSTRAP_ADMIN_USERNAME` | — | Initial admin username (first startup only) |
 | `BOOTSTRAP_ADMIN_EMAIL` | — | Initial admin email |
 | `BOOTSTRAP_ADMIN_PASSWORD` | — | Initial admin password (min 12 chars) |
+| `SMTP_HOST` | — | SMTP relay host (Selectel: `smtp.mail.selcloud.ru`) |
+| `SMTP_PORT` | 1127 | SMTP port (Selectel: 1127 = TLS/SSL, 1126 = no SSL) |
+| `SMTP_USERNAME` | — | SMTP login |
+| `SMTP_PASSWORD` | — | SMTP password |
+| `SMTP_FROM_EMAIL` | — | Sender address (must be on a domain verified with the SMTP provider) |
+| `SMTP_FROM_NAME` | OtherSide | Sender display name |
+| `SMTP_USE_TLS` | true | Use TLS/SSL for the SMTP connection |
+| `EMAIL_VERIFICATION_CODE_TTL_MINUTES` | 15 | How long a verification code stays valid |
+| `EMAIL_VERIFICATION_MAX_ATTEMPTS` | 5 | Wrong-code attempts allowed before a new code is required |
 
 ## Robokassa merchant setup
 
@@ -181,9 +193,93 @@ and fulfills the payment (`ProcessRobokassaWebhookUseCase`). Success/Fail URLs a
 redirects only — pure confirmation pages in the frontend (`OtherSideFrontend/src/app/(public)/payments`)
 with no bearing on whether the subscription is actually granted.
 
+## Настройка email-верификации (Selectel)
+
+При регистрации (`POST /auth/register`) на почту пользователя отправляется 6-значный код
+подтверждения (действует `EMAIL_VERIFICATION_CODE_TTL_MINUTES` минут, по умолчанию 15). Пока
+email не подтверждён кодом через `POST /auth/verify-email`, `POST /auth/login` возвращает
+`403 {"code": "email_not_verified"}`. Если код не пришёл или устарел — `POST
+/auth/resend-verification` присылает новый.
+
+Отправка писем идёт по обычному SMTP (`src/infrastructure/email/smtp_client.py`), поэтому подойдёт
+любой SMTP-провайдер — но по умолчанию всё настроено под **почтовый сервис Selectel** (SMTP-relay
+для транзакционных писем). Настройка целиком — на стороне Selectel и в `.env`, кода менять не
+нужно.
+
+### 1. Создать ресурс в панели Selectel
+
+1. Панель управления Selectel → **Продукты → Почтовый сервис** → «Создать ресурс».
+2. Задайте имя ресурса — это просто ярлык внутри панели, на настройки не влияет.
+
+### 2. Подтвердить домен
+
+1. На вкладке **Информация** ресурса скопируйте «Ключ для подтверждения владения доменом».
+2. У вашего DNS-регистратора (там, где управляется `otherside-inc.ru` или другой домен, с которого
+   будут отправляться письма) добавьте TXT-запись:
+   - Тип: `TXT`
+   - Имя: сам домен (например, `otherside-inc.ru`)
+   - Значение: скопированный ключ
+3. В той же вкладке нажмите «Добавить» под «Привязанные домены» и укажите домен. К одному ресурсу
+   можно привязать до трёх доменов.
+
+### 3. Добавить DNS-записи DKIM / DMARC / SPF
+
+После привязки домена в панели появятся готовые значения — добавьте их у регистратора:
+
+| Тип | Имя | Значение |
+|-----|-----|----------|
+| TXT (DKIM) | `selcloud._domainkey.<ваш-домен>` | значение из карточки домена в панели (строка DKIM) |
+| TXT (DMARC) | `_dmarc.<ваш-домен>` | `v=DMARC1; p=quarantine;` |
+| TXT (SPF) | `<ваш-домен>` | `v=spf1 include:spf.mail.selcloud.ru ?all` (если SPF-запись уже есть — просто добавьте `include:spf.mail.selcloud.ru` в неё, второй TXT-записи с `v=spf1` на домене быть не должно) |
+
+DNS может обновляться до 72 часов — до этого письма могут попадать в спам или не отправляться.
+
+### 4. Получить SMTP-логин/пароль
+
+На вкладке **Информация** ресурса — данные для подключения:
+
+- Хост: `smtp.mail.selcloud.ru`
+- Порт: `1127` (TLS/SSL, рекомендуется) или `1126` (без шифрования)
+- Логин и пароль — там же, в карточке ресурса
+
+### 5. Прописать переменные в `.env`
+
+```env
+SMTP_HOST=smtp.mail.selcloud.ru
+SMTP_PORT=1127
+SMTP_USERNAME=<логин из панели Selectel>
+SMTP_PASSWORD=<пароль из панели Selectel>
+SMTP_FROM_EMAIL=noreply@<ваш-домен>   # адрес должен быть на подтверждённом домене
+SMTP_FROM_NAME=OtherSide
+SMTP_USE_TLS=true
+```
+
+`SMTP_FROM_EMAIL` не обязан существовать как настоящий почтовый ящик — важно только, чтобы его
+домен совпадал с доменом, подтверждённым в шагах 2-3.
+
+### 6. Перезапустить бэкенд
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+В production-режиме (`ENV=production`) приложение **не запустится**, если `SMTP_HOST`,
+`SMTP_USERNAME`, `SMTP_PASSWORD` или `SMTP_FROM_EMAIL` не заданы — это защита от повторения
+ситуации, когда сломанная интеграция роняет запросы уже после того, как они попали в прод (как
+было с 500-ошибкой при регистрации до этого фикса).
+
+### Проверка
+
+Зарегистрируйте тестового пользователя через `/auth/register` и убедитесь, что письмо с кодом
+пришло на почту. Если письмо не приходит — смотри логи API (`docker compose -f
+docker-compose.prod.yml logs -f api`): ошибки SMTP логируются как `Failed to send verification
+email to ...` и не приводят к 500 — сам аккаунт при этом уже создан, просто письмо не ушло
+(пользователь может запросить код повторно через `/auth/resend-verification`, когда SMTP заработает).
+
 ## Database Schema
 
-Source of truth: `db/schema/InitTables.sql`
+Source of truth: Alembic migrations (`migrations/versions/`). `alembic upgrade head` builds the
+full schema from an empty database — there is no separate SQL init script.
 
 Tables: `roles`, `users`, `company_games`, `subscription_plans`, `subscriptions`, `promocodes`, `payments`, `payment_events`, `system_settings`, `contact_submissions`, `landing_settings`, `roadmap_tasks`
 

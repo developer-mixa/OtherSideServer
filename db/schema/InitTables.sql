@@ -1,3 +1,11 @@
+-- DEPRECATED / UNUSED: kept only for historical reference.
+-- This file is no longer mounted as a docker-entrypoint-initdb.d script and is
+-- NOT the schema source of truth. It drifted out of sync with the Alembic
+-- migrations (missing default roles, users.is_blocked, users.consent_personal_data(_at),
+-- subscription_plans.duration_days, contact_submissions/landing_settings/roadmap_tasks),
+-- which caused `alembic upgrade head` to fail with "relation already exists" on a fresh
+-- database and led to 500 errors on registration. `alembic upgrade head` alone now
+-- builds the full schema from an empty database — see README.md "Database Schema".
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 CREATE TABLE IF NOT EXISTS roles (

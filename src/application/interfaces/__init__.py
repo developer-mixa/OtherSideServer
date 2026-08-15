@@ -121,6 +121,10 @@ class LandingSettingsRepositoryProtocol(Protocol):
     async def update(self, countdown_title: str, release_date: date) -> LandingSettings: ...
 
 
+class EmailSenderProtocol(Protocol):
+    async def send_verification_code(self, *, to_email: str, code: str) -> None: ...
+
+
 class RoadmapTaskRepositoryProtocol(Protocol):
     async def get_by_id(self, task_id: UUID) -> RoadmapTask | None: ...
     async def list_all(self) -> list[RoadmapTask]: ...
@@ -171,6 +175,7 @@ __all__ = [
     "PaymentCreateDTO",
     "RoleRepositoryProtocol",
     "UserRepositoryProtocol",
+    "EmailSenderProtocol",
     "CompanyGameRepositoryProtocol",
     "SubscriptionPlanRepositoryProtocol",
     "SubscriptionRepositoryProtocol",

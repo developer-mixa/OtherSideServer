@@ -7,8 +7,20 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, CheckConstraint, Date, ForeignKey, Integer, Numeric, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from infrastructure.db.base import Base
@@ -36,7 +48,14 @@ class UserModel(Base):
         PG_UUID(as_uuid=True), ForeignKey("roles.id", ondelete="SET NULL")
     )
     consent_personal_data: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    consent_personal_data_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    consent_personal_data_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    verification_code_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    verification_code_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    verification_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     role: Mapped[RoleModel | None] = relationship(back_populates="users")
     subscriptions: Mapped[list[SubscriptionModel]] = relationship(back_populates="user")
@@ -60,7 +79,9 @@ class SubscriptionPlanModel(Base):
         PG_UUID(as_uuid=True), ForeignKey("company_games.id", ondelete="SET NULL")
     )
     type: Mapped[str] = mapped_column(String, nullable=False)
-    price_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=Decimal("0.00"))
+    price_amount: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), nullable=False, default=Decimal("0.00")
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     duration_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -95,7 +116,9 @@ class PromocodeModel(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     code: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     plan_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("subscription_plans.id", ondelete="CASCADE"), nullable=False
+        PG_UUID(as_uuid=True),
+        ForeignKey("subscription_plans.id", ondelete="CASCADE"),
+        nullable=False,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -116,7 +139,9 @@ class PaymentModel(Base):
         PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     plan_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("subscription_plans.id", ondelete="CASCADE"), nullable=False
+        PG_UUID(as_uuid=True),
+        ForeignKey("subscription_plans.id", ondelete="CASCADE"),
+        nullable=False,
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)

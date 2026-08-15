@@ -30,12 +30,14 @@ from application.use_cases import (
     LoginUserUseCase,
     ProcessRobokassaWebhookUseCase,
     RegisterUserUseCase,
+    ResendVerificationCodeUseCase,
     SetMaintenanceModeUseCase,
     UpdateCompanyGameUseCase,
     UpdatePromocodeUseCase,
     UpdateSubscriptionPlanUseCase,
     UpdateSubscriptionUseCase,
     UpdateUserUseCase,
+    VerifyEmailUseCase,
 )
 from application.use_cases.contact import ListContactSubmissionsUseCase, SubmitContactUseCase
 from application.use_cases.landing import (
@@ -49,6 +51,7 @@ from application.use_cases.landing import (
 )
 from config.settings import settings
 from infrastructure.db.unit_of_work import SqlAlchemyUnitOfWork
+from infrastructure.email.smtp_client import SmtpEmailSender
 from infrastructure.payments.robokassa import RobokassaClient
 
 
@@ -77,13 +80,38 @@ class AppProvider(Provider):
     def unit_of_work(self, session: AsyncSession) -> SqlAlchemyUnitOfWork:
         return SqlAlchemyUnitOfWork(session)
 
+    @provide(scope=Scope.APP)
+    def email_sender(self) -> SmtpEmailSender:
+        return SmtpEmailSender(
+            host=settings.SMTP_HOST,
+            port=settings.SMTP_PORT,
+            username=settings.SMTP_USERNAME,
+            password=settings.SMTP_PASSWORD,
+            from_email=settings.SMTP_FROM_EMAIL,
+            from_name=settings.SMTP_FROM_NAME,
+            use_tls=settings.SMTP_USE_TLS,
+            code_ttl_minutes=settings.EMAIL_VERIFICATION_CODE_TTL_MINUTES,
+        )
+
     @provide(scope=Scope.REQUEST)
-    def register_user(self, uow: SqlAlchemyUnitOfWork) -> RegisterUserUseCase:
-        return RegisterUserUseCase(uow)
+    def register_user(
+        self, uow: SqlAlchemyUnitOfWork, email_sender: SmtpEmailSender
+    ) -> RegisterUserUseCase:
+        return RegisterUserUseCase(uow, email_sender)
 
     @provide(scope=Scope.REQUEST)
     def login_user(self, uow: SqlAlchemyUnitOfWork) -> LoginUserUseCase:
         return LoginUserUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def verify_email(self, uow: SqlAlchemyUnitOfWork) -> VerifyEmailUseCase:
+        return VerifyEmailUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def resend_verification_code(
+        self, uow: SqlAlchemyUnitOfWork, email_sender: SmtpEmailSender
+    ) -> ResendVerificationCodeUseCase:
+        return ResendVerificationCodeUseCase(uow, email_sender)
 
     @provide(scope=Scope.REQUEST)
     def get_current_user(self, uow: SqlAlchemyUnitOfWork) -> GetCurrentUserUseCase:

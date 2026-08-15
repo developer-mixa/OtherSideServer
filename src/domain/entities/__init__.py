@@ -30,6 +30,9 @@ class User:
     is_blocked: bool = False
     consent_personal_data: bool = False
     consent_personal_data_at: datetime | None = None
+    verification_code_hash: str | None = None
+    verification_code_expires_at: datetime | None = None
+    verification_attempts: int = 0
 
     @classmethod
     def create(
@@ -42,6 +45,7 @@ class User:
         is_blocked: bool = False,
         consent_personal_data: bool = False,
         consent_personal_data_at: datetime | None = None,
+        is_verified: bool = False,
     ) -> User:
         return cls(
             id=entity_id or uuid4(),
@@ -52,6 +56,7 @@ class User:
             is_blocked=is_blocked,
             consent_personal_data=consent_personal_data,
             consent_personal_data_at=consent_personal_data_at,
+            is_verified=is_verified,
         )
 
 

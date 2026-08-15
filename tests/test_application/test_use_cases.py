@@ -1,9 +1,11 @@
 """Application use case tests."""
 
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from tests.conftest import FakeEmailSender, FakeUnitOfWork, make_admin_user
 
 from application.dtos import (
     CompanyGameCreateDTO,
@@ -35,22 +37,24 @@ from application.use_cases import (
     ListUsersUseCase,
     LoginUserUseCase,
     RegisterUserUseCase,
+    ResendVerificationCodeUseCase,
     UpdateCompanyGameUseCase,
     UpdatePromocodeUseCase,
     UpdateSubscriptionPlanUseCase,
     UpdateSubscriptionUseCase,
     UpdateUserUseCase,
+    VerifyEmailUseCase,
 )
-from config.security import hash_password
+from config.security import hash_password, hash_verification_code
 from domain.entities import CompanyGame, PromocodeEntity, Role, Subscription, SubscriptionPlan, User
 from domain.exceptions import (
     AuthenticationError,
     AuthorizationError,
     DuplicateEntityError,
+    EmailNotVerifiedError,
     EntityNotFoundError,
     ValidationError,
 )
-from tests.conftest import FakeUnitOfWork, make_admin_user
 
 
 @pytest.fixture
@@ -58,9 +62,16 @@ def uow() -> FakeUnitOfWork:
     return FakeUnitOfWork()
 
 
+@pytest.fixture
+def email_sender() -> FakeEmailSender:
+    return FakeEmailSender()
+
+
 class TestRegisterUserUseCase:
-    async def test_register_success(self, uow: FakeUnitOfWork) -> None:
-        use_case = RegisterUserUseCase(uow)
+    async def test_register_success(
+        self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
+    ) -> None:
+        use_case = RegisterUserUseCase(uow, email_sender)
         dto = UserCreateDTO(
             username="newuser",
             email="new@example.com",
@@ -71,9 +82,31 @@ class TestRegisterUserUseCase:
         assert result.username == "newuser"
         assert result.email == "new@example.com"
         assert result.is_admin is False
+        assert result.is_verified is False
 
-    async def test_register_always_assigns_user_role(self, uow: FakeUnitOfWork) -> None:
-        use_case = RegisterUserUseCase(uow)
+    async def test_register_sends_verification_code(
+        self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
+    ) -> None:
+        use_case = RegisterUserUseCase(uow, email_sender)
+        dto = UserCreateDTO(
+            username="codeuser",
+            email="codeuser@example.com",
+            password="password123",
+            consent_personal_data=True,
+        )
+        await use_case.execute(dto)
+        assert len(email_sender.sent) == 1
+        to_email, code = email_sender.sent[0]
+        assert to_email == "codeuser@example.com"
+        assert len(code) == 6 and code.isdigit()
+        stored_user = await uow.users.get_by_email("codeuser@example.com")
+        assert stored_user is not None
+        assert stored_user.verification_code_hash == hash_verification_code(code)
+
+    async def test_register_always_assigns_user_role(
+        self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
+    ) -> None:
+        use_case = RegisterUserUseCase(uow, email_sender)
         dto = UserCreateDTO(
             username="plainuser",
             email="plain@example.com",
@@ -85,10 +118,12 @@ class TestRegisterUserUseCase:
         assert user_role is not None
         assert result.role_id == user_role.id
 
-    async def test_register_duplicate_email(self, uow: FakeUnitOfWork) -> None:
+    async def test_register_duplicate_email(
+        self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
+    ) -> None:
         user = User.create("existing", "dup@example.com", "hash")
         uow._store.users[user.id] = user
-        use_case = RegisterUserUseCase(uow)
+        use_case = RegisterUserUseCase(uow, email_sender)
         dto = UserCreateDTO(
             username="other",
             email="dup@example.com",
@@ -98,8 +133,10 @@ class TestRegisterUserUseCase:
         with pytest.raises(DuplicateEntityError):
             await use_case.execute(dto)
 
-    async def test_register_requires_consent(self, uow: FakeUnitOfWork) -> None:
-        use_case = RegisterUserUseCase(uow)
+    async def test_register_requires_consent(
+        self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
+    ) -> None:
+        use_case = RegisterUserUseCase(uow, email_sender)
         dto = UserCreateDTO(
             username="noconsent",
             email="noconsent@example.com",
@@ -112,14 +149,18 @@ class TestRegisterUserUseCase:
 
 class TestLoginUserUseCase:
     async def test_login_success(self, uow: FakeUnitOfWork) -> None:
-        user = User.create("loginuser", "login@example.com", hash_password("password123"))
+        user = User.create(
+            "loginuser", "login@example.com", hash_password("password123"), is_verified=True
+        )
         uow._store.users[user.id] = user
         use_case = LoginUserUseCase(uow)
         result = await use_case.execute("login@example.com", "password123")
         assert result.access_token
 
     async def test_login_wrong_password(self, uow: FakeUnitOfWork) -> None:
-        user = User.create("loginuser", "login@example.com", hash_password("password123"))
+        user = User.create(
+            "loginuser", "login@example.com", hash_password("password123"), is_verified=True
+        )
         uow._store.users[user.id] = user
         use_case = LoginUserUseCase(uow)
         with pytest.raises(AuthenticationError):
@@ -127,13 +168,106 @@ class TestLoginUserUseCase:
 
     async def test_login_blocked_user_rejected(self, uow: FakeUnitOfWork) -> None:
         user = User.create(
-            "blockeduser", "blocked@example.com", hash_password("password123")
+            "blockeduser",
+            "blocked@example.com",
+            hash_password("password123"),
+            is_verified=True,
         )
         user.is_blocked = True
         uow._store.users[user.id] = user
         use_case = LoginUserUseCase(uow)
         with pytest.raises(AuthorizationError):
             await use_case.execute("blocked@example.com", "password123")
+
+    async def test_login_unverified_user_rejected(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("unverifieduser", "unverified@example.com", hash_password("password123"))
+        uow._store.users[user.id] = user
+        use_case = LoginUserUseCase(uow)
+        with pytest.raises(EmailNotVerifiedError):
+            await use_case.execute("unverified@example.com", "password123")
+
+
+class TestVerifyEmailUseCase:
+    async def test_verify_email_success(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("pending", "pending@example.com", "hash")
+        user.verification_code_hash = hash_verification_code("123456")
+        user.verification_code_expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+        uow._store.users[user.id] = user
+
+        use_case = VerifyEmailUseCase(uow)
+        result = await use_case.execute("pending@example.com", "123456")
+        assert result.is_verified is True
+        stored_user = await uow.users.get_by_email("pending@example.com")
+        assert stored_user is not None
+        assert stored_user.verification_code_hash is None
+
+    async def test_verify_email_wrong_code_increments_attempts(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("pending", "pending2@example.com", "hash")
+        user.verification_code_hash = hash_verification_code("123456")
+        user.verification_code_expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+        uow._store.users[user.id] = user
+
+        use_case = VerifyEmailUseCase(uow)
+        with pytest.raises(ValidationError):
+            await use_case.execute("pending2@example.com", "000000")
+
+        stored_user = await uow.users.get_by_email("pending2@example.com")
+        assert stored_user is not None
+        assert stored_user.verification_attempts == 1
+        assert stored_user.is_verified is False
+
+    async def test_verify_email_expired_code_rejected(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("pending", "expired@example.com", "hash")
+        user.verification_code_hash = hash_verification_code("123456")
+        user.verification_code_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        uow._store.users[user.id] = user
+
+        use_case = VerifyEmailUseCase(uow)
+        with pytest.raises(ValidationError):
+            await use_case.execute("expired@example.com", "123456")
+
+    async def test_verify_email_already_verified_rejected(self, uow: FakeUnitOfWork) -> None:
+        user = User.create("verified", "verified@example.com", "hash", is_verified=True)
+        uow._store.users[user.id] = user
+
+        use_case = VerifyEmailUseCase(uow)
+        with pytest.raises(ValidationError):
+            await use_case.execute("verified@example.com", "123456")
+
+    async def test_verify_email_unknown_user_not_found(self, uow: FakeUnitOfWork) -> None:
+        use_case = VerifyEmailUseCase(uow)
+        with pytest.raises(EntityNotFoundError):
+            await use_case.execute("nobody@example.com", "123456")
+
+
+class TestResendVerificationCodeUseCase:
+    async def test_resend_sends_new_code(
+        self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
+    ) -> None:
+        user = User.create("pending", "resend@example.com", "hash")
+        user.verification_attempts = 3
+        uow._store.users[user.id] = user
+
+        use_case = ResendVerificationCodeUseCase(uow, email_sender)
+        await use_case.execute("resend@example.com")
+
+        assert len(email_sender.sent) == 1
+        to_email, code = email_sender.sent[0]
+        assert to_email == "resend@example.com"
+        stored_user = await uow.users.get_by_email("resend@example.com")
+        assert stored_user is not None
+        assert stored_user.verification_attempts == 0
+        assert stored_user.verification_code_hash == hash_verification_code(code)
+
+    async def test_resend_already_verified_rejected(
+        self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
+    ) -> None:
+        user = User.create("verified", "verified2@example.com", "hash", is_verified=True)
+        uow._store.users[user.id] = user
+
+        use_case = ResendVerificationCodeUseCase(uow, email_sender)
+        with pytest.raises(ValidationError):
+            await use_case.execute("verified2@example.com")
 
 
 class TestGetCurrentUserUseCase:
@@ -350,9 +484,7 @@ class TestSubscriptionUseCases:
     async def test_update_missing_subscription(self, uow: FakeUnitOfWork) -> None:
         admin = make_admin_user(uow._store)
         with pytest.raises(EntityNotFoundError):
-            await UpdateSubscriptionUseCase(uow).execute(
-                admin.id, uuid4(), SubscriptionUpdateDTO()
-            )
+            await UpdateSubscriptionUseCase(uow).execute(admin.id, uuid4(), SubscriptionUpdateDTO())
 
     async def test_delete_subscription(self, uow: FakeUnitOfWork) -> None:
         admin = make_admin_user(uow._store)

@@ -22,6 +22,14 @@ _RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
         settings.RATE_LIMIT_AUTH_REQUESTS,
         settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
     ),
+    "/api/v1/auth/verify-email": (
+        settings.RATE_LIMIT_AUTH_REQUESTS,
+        settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
+    ),
+    "/api/v1/auth/resend-verification": (
+        settings.RATE_LIMIT_AUTH_REQUESTS,
+        settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
+    ),
     "/api/v1/contact/submissions": (
         settings.RATE_LIMIT_CONTACT_REQUESTS,
         settings.RATE_LIMIT_CONTACT_WINDOW_SECONDS,
@@ -42,7 +50,9 @@ class _InMemoryRateLimiter:
         now = time.monotonic()
         with self._lock:
             timestamps = self._requests[key]
-            timestamps[:] = [timestamp for timestamp in timestamps if now - timestamp < window_seconds]
+            timestamps[:] = [
+                timestamp for timestamp in timestamps if now - timestamp < window_seconds
+            ]
             if len(timestamps) >= limit:
                 return False
             timestamps.append(now)

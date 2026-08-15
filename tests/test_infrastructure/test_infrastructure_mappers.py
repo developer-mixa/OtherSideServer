@@ -1,6 +1,6 @@
 """Infrastructure mapper round-trip tests."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -53,12 +53,21 @@ class TestUserMapper:
         assert restored.is_blocked == entity.is_blocked
 
     def test_round_trip_blocked(self) -> None:
-        entity = User.create(
-            "blocked", "blocked@example.com", "hash", is_blocked=True
-        )
+        entity = User.create("blocked", "blocked@example.com", "hash", is_blocked=True)
         model = user_entity_to_model(entity)
         restored = user_model_to_entity(model)
         assert restored.is_blocked is True
+
+    def test_round_trip_verification_fields(self) -> None:
+        entity = User.create("pending", "pending@example.com", "hash")
+        entity.verification_code_hash = "somehash"
+        entity.verification_code_expires_at = datetime.now(timezone.utc)
+        entity.verification_attempts = 2
+        model = user_entity_to_model(entity)
+        restored = user_model_to_entity(model)
+        assert restored.verification_code_hash == "somehash"
+        assert restored.verification_code_expires_at == entity.verification_code_expires_at
+        assert restored.verification_attempts == 2
 
 
 class TestCompanyGameMapper:

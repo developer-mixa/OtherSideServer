@@ -56,3 +56,10 @@ class PaymentVerificationError(DomainError):
 
     def __init__(self, message: str = "Payment verification failed") -> None:
         super().__init__(message)
+
+
+class EmailNotVerifiedError(DomainError):
+    """Raised when login is attempted before email verification is complete."""
+
+    def __init__(self, message: str = "Email not verified") -> None:
+        super().__init__(message)

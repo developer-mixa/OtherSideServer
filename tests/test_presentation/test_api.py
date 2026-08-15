@@ -6,7 +6,7 @@ from httpx import AsyncClient
 
 from config.security import hash_password
 from domain.entities import CompanyGame, PromocodeEntity, Subscription, SubscriptionPlan, User
-from tests.conftest import FakeUnitOfWork
+from tests.conftest import FakeEmailSender, FakeUnitOfWork
 
 
 class TestHealthEndpoint:
@@ -56,7 +56,9 @@ class TestAuthEndpoints:
         assert response.status_code == 422
 
     async def test_login(self, client: AsyncClient, fake_uow: FakeUnitOfWork) -> None:
-        user = User.create("loginuser", "login@example.com", hash_password("password123"))
+        user = User.create(
+            "loginuser", "login@example.com", hash_password("password123"), is_verified=True
+        )
         fake_uow._store.users[user.id] = user
         response = await client.post(
             "/api/v1/auth/login",
@@ -64,6 +66,98 @@ class TestAuthEndpoints:
         )
         assert response.status_code == 200
         assert "access_token" in response.json()
+
+    async def test_login_rejected_for_unverified_email(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork
+    ) -> None:
+        user = User.create("unverified", "unverified@example.com", hash_password("password123"))
+        fake_uow._store.users[user.id] = user
+        response = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "unverified@example.com", "password": "password123"},
+        )
+        assert response.status_code == 403
+        assert response.json()["code"] == "email_not_verified"
+
+    async def test_verify_email_success(
+        self,
+        client: AsyncClient,
+        fake_uow: FakeUnitOfWork,
+        fake_email_sender: FakeEmailSender,
+    ) -> None:
+        register_resp = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "verifyuser",
+                "email": "verifyuser@example.com",
+                "password": "password123",
+                "consent_personal_data": True,
+            },
+        )
+        assert register_resp.status_code == 201
+        assert register_resp.json()["is_verified"] is False
+        assert len(fake_email_sender.sent) == 1
+        to_email, code = fake_email_sender.sent[0]
+        assert to_email == "verifyuser@example.com"
+
+        verify_resp = await client.post(
+            "/api/v1/auth/verify-email",
+            json={"email": "verifyuser@example.com", "code": code},
+        )
+        assert verify_resp.status_code == 200
+        assert verify_resp.json()["is_verified"] is True
+
+        login_resp = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "verifyuser@example.com", "password": "password123"},
+        )
+        assert login_resp.status_code == 200
+
+    async def test_resend_verification_sends_new_code(
+        self,
+        client: AsyncClient,
+        fake_email_sender: FakeEmailSender,
+    ) -> None:
+        await client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "resenduser",
+                "email": "resenduser@example.com",
+                "password": "password123",
+                "consent_personal_data": True,
+            },
+        )
+        response = await client.post(
+            "/api/v1/auth/resend-verification",
+            json={"email": "resenduser@example.com"},
+        )
+        assert response.status_code == 204
+        assert len(fake_email_sender.sent) == 2
+
+    async def test_verify_email_wrong_code_rejected(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork
+    ) -> None:
+        await client.post(
+            "/api/v1/auth/register",
+            json={
+                "username": "wrongcodeuser",
+                "email": "wrongcodeuser@example.com",
+                "password": "password123",
+                "consent_personal_data": True,
+            },
+        )
+        response = await client.post(
+            "/api/v1/auth/verify-email",
+            json={"email": "wrongcodeuser@example.com", "code": "000000"},
+        )
+        assert response.status_code == 422
+
+    async def test_resend_verification_unknown_email_not_found(self, client: AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/auth/resend-verification",
+            json={"email": "unknown@example.com"},
+        )
+        assert response.status_code == 404
 
     async def test_me_authenticated(
         self, client: AsyncClient, auth_headers: dict[str, str]
@@ -104,9 +198,7 @@ class TestGamesEndpoints:
     async def test_create_game_requires_admin(
         self, client: AsyncClient, admin_headers: dict[str, str]
     ) -> None:
-        response = await client.post(
-            "/api/v1/games", json={"game": "CS2"}, headers=admin_headers
-        )
+        response = await client.post("/api/v1/games", json={"game": "CS2"}, headers=admin_headers)
         assert response.status_code == 201
         assert response.json()["game"] == "CS2"
 
@@ -283,9 +375,7 @@ class TestSubscriptionsEndpoints:
         fake_uow._store.users[user.id] = user
         sub = Subscription.create(user_id=user.id)
         fake_uow._store.subscriptions[sub.id] = sub
-        response = await client.delete(
-            f"/api/v1/subscriptions/{sub.id}", headers=admin_headers
-        )
+        response = await client.delete(f"/api/v1/subscriptions/{sub.id}", headers=admin_headers)
         assert response.status_code == 204
 
     async def test_update_subscription_forbidden_for_regular_user(
@@ -349,9 +439,7 @@ class TestPromocodesEndpoints:
         fake_uow._store.subscription_plans[plan.id] = plan
         code = PromocodeEntity.create("DEL10", plan.id)
         fake_uow._store.promocodes[code.id] = code
-        response = await client.delete(
-            f"/api/v1/promocodes/{code.id}", headers=admin_headers
-        )
+        response = await client.delete(f"/api/v1/promocodes/{code.id}", headers=admin_headers)
         assert response.status_code == 204
 
     async def test_update_promocode_forbidden_for_regular_user(
@@ -419,7 +507,12 @@ class TestUsersEndpoints:
     async def test_login_rejected_for_blocked_user(
         self, client: AsyncClient, fake_uow: FakeUnitOfWork, admin_headers: dict[str, str]
     ) -> None:
-        user = User.create("blockeduser2", "blockeduser2@example.com", hash_password("password123"))
+        user = User.create(
+            "blockeduser2",
+            "blockeduser2@example.com",
+            hash_password("password123"),
+            is_verified=True,
+        )
         fake_uow._store.users[user.id] = user
         block_resp = await client.patch(
             f"/api/v1/users/{user.id}", json={"is_blocked": True}, headers=admin_headers

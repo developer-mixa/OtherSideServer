@@ -59,6 +59,7 @@ async def bootstrap_admin_user(session_factory: async_sessionmaker) -> None:
                 email=email,
                 password_hash=hash_password(settings.BOOTSTRAP_ADMIN_PASSWORD),
                 role_id=admin_role.id,
+                is_verified=True,
             )
             await uow.users.add(user)
             await uow.commit()

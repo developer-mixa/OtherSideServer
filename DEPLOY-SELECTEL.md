@@ -168,7 +168,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./db/schema/InitTables.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d app"]
       interval: 5s
@@ -205,6 +204,13 @@ POSTGRES_PASSWORD=<сильный-пароль-бд>
 ```
 
 `DATABASE_URL` и `POSTGRES_PASSWORD` должны использовать один и тот же пароль.
+
+Помимо этого заполни в `.env` (полный список переменных и их описание — в `.env.example`):
+- `ROBOKASSA_*` — данные мерчанта Robokassa;
+- `SMTP_*` — доступ к почтовому сервису для отправки кода подтверждения email при регистрации.
+  В production-режиме (`ENV=production`) сервер откажется стартовать, если `SMTP_HOST`,
+  `SMTP_USERNAME`, `SMTP_PASSWORD` или `SMTP_FROM_EMAIL` не заданы. Полная инструкция по
+  настройке — в README.md, раздел «Настройка email-верификации (Selectel)».
 
 ### 3.2 Запуск бэка
 

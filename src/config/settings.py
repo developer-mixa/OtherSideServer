@@ -33,6 +33,19 @@ class Settings(BaseSettings):
     ROBOKASSA_IS_TEST: bool = True
     ROBOKASSA_PAYMENT_URL: str = "https://auth.robokassa.ru/Merchant/Index.aspx"
 
+    # Selectel Email Service SMTP relay (or any SMTP-compatible provider) — see README.md
+    # "Настройка email-верификации (Selectel)" for the full setup guide.
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 1127
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_FROM_NAME: str = "OtherSide"
+    SMTP_USE_TLS: bool = True
+
+    EMAIL_VERIFICATION_CODE_TTL_MINUTES: int = 15
+    EMAIL_VERIFICATION_MAX_ATTEMPTS: int = 5
+
     RATE_LIMIT_AUTH_REQUESTS: int = 10
     RATE_LIMIT_AUTH_WINDOW_SECONDS: int = 60
     RATE_LIMIT_CONTACT_REQUESTS: int = 5
@@ -86,6 +99,18 @@ class Settings(BaseSettings):
 
         if self.ROBOKASSA_IS_TEST:
             raise ValueError("ROBOKASSA_IS_TEST must be false in production")
+
+        if not self.SMTP_HOST.strip():
+            raise ValueError("SMTP_HOST is required in production")
+
+        if not self.SMTP_USERNAME.strip():
+            raise ValueError("SMTP_USERNAME is required in production")
+
+        if not self.SMTP_PASSWORD:
+            raise ValueError("SMTP_PASSWORD is required in production")
+
+        if not self.SMTP_FROM_EMAIL.strip():
+            raise ValueError("SMTP_FROM_EMAIL is required in production")
 
         return self
 

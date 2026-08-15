@@ -46,6 +46,36 @@ class TestProductionSettingsValidation:
                 ROBOKASSA_IS_TEST=False,
             )
 
+    def test_production_requires_smtp_host(self) -> None:
+        with pytest.raises(ValidationError, match="SMTP_HOST"):
+            Settings(
+                ENV="production",
+                DEBUG=False,
+                SECRET_KEY="super-secret-production-key",
+                CORS_ORIGINS=["https://example.com"],
+                ROBOKASSA_MERCHANT_LOGIN="shop",
+                ROBOKASSA_PASSWORD1="pass1",
+                ROBOKASSA_PASSWORD2="pass2",
+                ROBOKASSA_IS_TEST=False,
+            )
+
+    def test_production_allows_full_smtp_config(self) -> None:
+        settings = Settings(
+            ENV="production",
+            DEBUG=False,
+            SECRET_KEY="super-secret-production-key",
+            CORS_ORIGINS=["https://example.com"],
+            ROBOKASSA_MERCHANT_LOGIN="shop",
+            ROBOKASSA_PASSWORD1="pass1",
+            ROBOKASSA_PASSWORD2="pass2",
+            ROBOKASSA_IS_TEST=False,
+            SMTP_HOST="smtp.mail.selcloud.ru",
+            SMTP_USERNAME="user",
+            SMTP_PASSWORD="secret",
+            SMTP_FROM_EMAIL="noreply@otherside-inc.ru",
+        )
+        assert settings.is_production is True
+
     def test_local_allows_defaults(self) -> None:
         settings = Settings(
             _env_file=None,
