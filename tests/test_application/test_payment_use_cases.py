@@ -1,6 +1,6 @@
 """Payment use case tests."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -202,7 +202,9 @@ class TestProcessRobokassaWebhookUseCase:
             if s.user_id == paying_user.id and s.plan_id == monthly_plan.id
         ]
         assert len(subs) == 1
-        assert subs[0].active_until == date.today() + timedelta(days=30)
+        # The use case computes "today" from datetime.utcnow(), not local time — match that here
+        # so the test doesn't flake near midnight in timezones ahead of UTC (e.g. MSK).
+        assert subs[0].active_until == datetime.utcnow().date() + timedelta(days=30)
         assert subs[0].source_payment_id == payment.id
 
     async def test_renewal_extends_from_current_expiry_not_from_today(
