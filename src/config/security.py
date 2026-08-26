@@ -44,7 +44,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALG])
         return payload
     except JWTError as exc:
-        raise AuthenticationError("Invalid or expired token") from exc
+        raise AuthenticationError("Invalid or expired token", code="token_invalid") from exc
 
 
 def get_user_id_from_token(token: str) -> UUID:
@@ -52,7 +52,7 @@ def get_user_id_from_token(token: str) -> UUID:
     payload = decode_access_token(token)
     sub = payload.get("sub")
     if sub is None:
-        raise AuthenticationError("Token missing subject")
+        raise AuthenticationError("Token missing subject", code="token_invalid")
     return UUID(sub)
 
 

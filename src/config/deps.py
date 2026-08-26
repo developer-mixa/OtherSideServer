@@ -17,7 +17,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 def resolve_user_id(credentials: HTTPAuthorizationCredentials | None) -> UUID:
     """Extract user ID from Bearer credentials."""
     if credentials is None:
-        raise AuthenticationError("Not authenticated")
+        raise AuthenticationError("Not authenticated", code="not_authenticated")
     return get_user_id_from_token(credentials.credentials)
 
 

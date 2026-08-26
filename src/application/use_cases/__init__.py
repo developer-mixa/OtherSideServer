@@ -87,36 +87,62 @@ class RegisterUserUseCase:
 
     async def execute(self, dto: UserCreateDTO) -> UserDTO:
         if not dto.consent_personal_data:
-            raise ValidationError("Consent to personal data processing is required")
+            raise ValidationError(
+                "Consent to personal data processing is required", code="consent_required"
+            )
 
         username = Username(dto.username)
         email = Email(dto.email)
         Password(dto.password)
 
         async with self._uow:
-            if await self._uow.users.get_by_email(email.value):
-                raise DuplicateEntityError("User", "email", email.value)
-            if await self._uow.users.get_by_username(username.value):
-                raise DuplicateEntityError("User", "username", username.value)
+            existing = await self._uow.users.get_by_email(email.value)
+            if existing is not None and existing.is_verified:
+                raise DuplicateEntityError(
+                    "User", "email", email.value, code="duplicate_user_email"
+                )
 
-            default_role = await self._uow.roles.get_by_name(USER_ROLE_NAME)
-            if default_role is None:
-                raise EntityNotFoundError("Role", USER_ROLE_NAME)
+            username_owner = await self._uow.users.get_by_username(username.value)
+            if username_owner is not None and (
+                existing is None or username_owner.id != existing.id
+            ):
+                raise DuplicateEntityError(
+                    "User", "username", username.value, code="duplicate_user_username"
+                )
 
+            now = datetime.now(timezone.utc)
             code = generate_verification_code()
-            user = User.create(
-                username=username.value,
-                email=email.value,
-                password_hash=hash_password(dto.password),
-                role_id=default_role.id,
-                consent_personal_data=True,
-                consent_personal_data_at=datetime.now(timezone.utc),
-            )
-            user.verification_code_hash = hash_verification_code(code)
-            user.verification_code_expires_at = datetime.now(timezone.utc) + timedelta(
-                minutes=settings.EMAIL_VERIFICATION_CODE_TTL_MINUTES
-            )
-            await self._uow.users.add(user)
+            expires_at = now + timedelta(minutes=settings.EMAIL_VERIFICATION_CODE_TTL_MINUTES)
+
+            if existing is not None:
+                # The address was never proven to belong to anyone, so the half-finished
+                # signup is not a real account: take it over instead of dead-ending the
+                # user who abandoned verification and came back to register again.
+                if existing.role_id is None:
+                    existing.role_id = (await self._require_default_role()).id
+                existing.username = username.value
+                existing.password_hash = hash_password(dto.password)
+                existing.consent_personal_data = True
+                existing.consent_personal_data_at = now
+                existing.verification_code_hash = hash_verification_code(code)
+                existing.verification_code_expires_at = expires_at
+                existing.verification_attempts = 0
+                await self._uow.users.update(existing)
+                user = existing
+            else:
+                default_role = await self._require_default_role()
+                user = User.create(
+                    username=username.value,
+                    email=email.value,
+                    password_hash=hash_password(dto.password),
+                    role_id=default_role.id,
+                    consent_personal_data=True,
+                    consent_personal_data_at=now,
+                )
+                user.verification_code_hash = hash_verification_code(code)
+                user.verification_code_expires_at = expires_at
+                await self._uow.users.add(user)
+
             await self._uow.commit()
             result = await build_user_dto(self._uow, user)
 
@@ -126,6 +152,12 @@ class RegisterUserUseCase:
             logger.exception("Failed to send verification email to %s", user.email)
 
         return result
+
+    async def _require_default_role(self) -> Role:
+        default_role = await self._uow.roles.get_by_name(USER_ROLE_NAME)
+        if default_role is None:
+            raise EntityNotFoundError("Role", USER_ROLE_NAME)
+        return default_role
 
 
 class LoginUserUseCase:
@@ -142,7 +174,7 @@ class LoginUserUseCase:
             if user is None or not verify_password(password, user.password_hash):
                 raise AuthenticationError()
             if user.is_blocked:
-                raise AuthorizationError("User is blocked")
+                raise AuthorizationError("User is blocked", code="user_blocked")
             if not user.is_verified:
                 raise EmailNotVerifiedError()
 
@@ -162,23 +194,29 @@ class VerifyEmailUseCase:
         async with self._uow:
             user = await self._uow.users.get_by_email(normalized_email)
             if user is None:
-                raise EntityNotFoundError("User", normalized_email)
+                raise EntityNotFoundError("User", normalized_email, code="user_not_found_by_email")
             if user.is_verified:
-                raise ValidationError("Email is already verified")
+                raise ValidationError("Email is already verified", code="email_already_verified")
             if (
                 user.verification_code_hash is None
                 or user.verification_code_expires_at is None
                 or datetime.now(timezone.utc) > user.verification_code_expires_at
             ):
-                raise ValidationError("Verification code has expired. Request a new one.")
+                raise ValidationError(
+                    "Verification code has expired. Request a new one.",
+                    code="verification_code_expired",
+                )
             if user.verification_attempts >= settings.EMAIL_VERIFICATION_MAX_ATTEMPTS:
-                raise ValidationError("Too many attempts. Request a new code.")
+                raise ValidationError(
+                    "Too many attempts. Request a new code.",
+                    code="verification_too_many_attempts",
+                )
 
             if not verify_verification_code(code, user.verification_code_hash):
                 user.verification_attempts += 1
                 await self._uow.users.update(user)
                 await self._uow.commit()
-                raise ValidationError("Invalid verification code")
+                raise ValidationError("Invalid verification code", code="verification_code_invalid")
 
             user.is_verified = True
             user.verification_code_hash = None
@@ -202,9 +240,9 @@ class ResendVerificationCodeUseCase:
         async with self._uow:
             user = await self._uow.users.get_by_email(normalized_email)
             if user is None:
-                raise EntityNotFoundError("User", normalized_email)
+                raise EntityNotFoundError("User", normalized_email, code="user_not_found_by_email")
             if user.is_verified:
-                raise ValidationError("Email is already verified")
+                raise ValidationError("Email is already verified", code="email_already_verified")
 
             code = generate_verification_code()
             user.verification_code_hash = hash_verification_code(code)

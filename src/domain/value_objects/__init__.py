@@ -19,7 +19,7 @@ class Email:
     def __post_init__(self) -> None:
         normalized = self.value.strip().lower()
         if not _EMAIL_RE.match(normalized):
-            raise ValidationError(f"Invalid email: {self.value!r}")
+            raise ValidationError(f"Invalid email: {self.value!r}", code="invalid_email")
         object.__setattr__(self, "value", normalized)
 
 
@@ -31,9 +31,9 @@ class Username:
 
     def __post_init__(self) -> None:
         if not 3 <= len(self.value) <= 32:
-            raise ValidationError("Username must be 3-32 characters")
+            raise ValidationError("Username must be 3-32 characters", code="username_length")
         if not self.value.isalnum():
-            raise ValidationError("Username must be alphanumeric")
+            raise ValidationError("Username must be alphanumeric", code="username_alphanumeric")
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +44,9 @@ class Password:
 
     def __post_init__(self) -> None:
         if len(self.value) < 8:
-            raise ValidationError("Password must be at least 8 characters")
+            raise ValidationError(
+                "Password must be at least 8 characters", code="password_too_short"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,5 +58,5 @@ class Promocode:
     def __post_init__(self) -> None:
         normalized = self.value.strip().upper()
         if not 4 <= len(normalized) <= 32:
-            raise ValidationError("Promocode must be 4-32 characters")
+            raise ValidationError("Promocode must be 4-32 characters", code="promocode_length")
         object.__setattr__(self, "value", normalized)

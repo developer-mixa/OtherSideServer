@@ -38,23 +38,30 @@ class InitiatePaymentUseCase:
             existing = await self._uow.payments.get_by_idempotency_key(dto.idempotency_key)
             if existing:
                 if existing.user_id != user_id:
-                    raise AuthorizationError("Payment belongs to another user")
+                    raise AuthorizationError(
+                        "Payment belongs to another user", code="payment_foreign"
+                    )
                 return self._build_init_result(existing)
 
             plan = await self._uow.subscription_plans.get_by_id(dto.plan_id)
             if plan is None:
                 raise EntityNotFoundError("SubscriptionPlan", dto.plan_id)
             if not plan.is_active:
-                raise ValidationError("Subscription plan is not available for purchase")
+                raise ValidationError(
+                    "Subscription plan is not available for purchase",
+                    code="plan_not_purchasable",
+                )
             if plan.price_amount <= Decimal("0"):
-                raise ValidationError("Plan price is not configured")
+                raise ValidationError("Plan price is not configured", code="plan_price_missing")
 
             current = await self._uow.subscriptions.get_current_by_user_and_plan(
                 user_id, plan.id, date.today()
             )
             if current is not None and current.active_until is None:
                 # Already has a permanent subscription to this plan — nothing to buy.
-                raise DuplicateEntityError("Subscription", "plan_id", str(plan.id))
+                raise DuplicateEntityError(
+                    "Subscription", "plan_id", str(plan.id), code="subscription_already_active"
+                )
 
             invoice_id = await self._generate_unique_invoice_id()
             now = datetime.utcnow()
@@ -100,7 +107,9 @@ class InitiatePaymentUseCase:
             existing = await self._uow.payments.get_by_robokassa_invoice_id(candidate)
             if existing is None:
                 return candidate
-        raise ValidationError("Failed to generate unique Robokassa invoice id")
+        raise ValidationError(
+            "Failed to generate unique Robokassa invoice id", code="invoice_id_generation_failed"
+        )
 
     def _build_init_result(self, payment: Payment) -> PaymentInitResultDTO:
         payment_url = self._robokassa.build_payment_url(
@@ -187,7 +196,10 @@ class ProcessRobokassaWebhookUseCase:
 
             if payment.status != "pending":
                 await self._uow.commit()
-                raise ValidationError(f"Payment cannot be fulfilled in status={payment.status}")
+                raise ValidationError(
+                    f"Payment cannot be fulfilled in status={payment.status}",
+                    code="payment_not_fulfillable",
+                )
 
             if not RobokassaClient.amounts_equal(payment.amount, out_sum):
                 await self._uow.commit()

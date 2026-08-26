@@ -23,7 +23,7 @@ _VALID_STATUSES = frozenset({"pending", "in_progress", "completed"})
 
 def _validate_status(status: str) -> None:
     if status not in _VALID_STATUSES:
-        raise ValidationError(f"Invalid status: {status}")
+        raise ValidationError(f"Invalid status: {status}", code="invalid_status")
 
 
 class GetLandingPublicUseCase:

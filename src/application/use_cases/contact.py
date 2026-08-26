@@ -20,7 +20,9 @@ class SubmitContactUseCase:
 
     async def execute(self, dto: ContactSubmissionCreateDTO) -> ContactSubmissionDTO:
         if not dto.consent_personal_data or not dto.consent_privacy:
-            raise ValidationError("Both consent checkboxes must be accepted")
+            raise ValidationError(
+                "Both consent checkboxes must be accepted", code="consent_required"
+            )
 
         async with self._uow:
             entity = ContactSubmission.create(

@@ -118,10 +118,10 @@ class TestRegisterUserUseCase:
         assert user_role is not None
         assert result.role_id == user_role.id
 
-    async def test_register_duplicate_email(
+    async def test_register_duplicate_verified_email(
         self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
     ) -> None:
-        user = User.create("existing", "dup@example.com", "hash")
+        user = User.create("existing", "dup@example.com", "hash", is_verified=True)
         uow._store.users[user.id] = user
         use_case = RegisterUserUseCase(uow, email_sender)
         dto = UserCreateDTO(
@@ -130,8 +130,53 @@ class TestRegisterUserUseCase:
             password="password123",
             consent_personal_data=True,
         )
-        with pytest.raises(DuplicateEntityError):
+        with pytest.raises(DuplicateEntityError) as exc_info:
             await use_case.execute(dto)
+        assert exc_info.value.code == "duplicate_user_email"
+
+    async def test_register_reclaims_unverified_account(
+        self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
+    ) -> None:
+        """A signup abandoned at the code-entry step must not lock the address forever."""
+        stale = User.create("stale", "retry@example.com", "old-hash")
+        stale.verification_code_hash = hash_verification_code("111111")
+        stale.verification_attempts = 5
+        uow._store.users[stale.id] = stale
+        use_case = RegisterUserUseCase(uow, email_sender)
+        dto = UserCreateDTO(
+            username="retryuser",
+            email="retry@example.com",
+            password="password123",
+            consent_personal_data=True,
+        )
+        result = await use_case.execute(dto)
+
+        assert result.id == stale.id
+        assert result.username == "retryuser"
+        assert len(email_sender.sent) == 1
+        _, code = email_sender.sent[0]
+        stored = await uow.users.get_by_email("retry@example.com")
+        assert stored is not None
+        assert stored.verification_code_hash == hash_verification_code(code)
+        assert stored.verification_attempts == 0
+        assert stored.password_hash != "old-hash"
+        assert stored.role_id is not None
+
+    async def test_register_rejects_username_owned_by_another_user(
+        self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
+    ) -> None:
+        taken = User.create("taken", "someone@example.com", "hash", is_verified=True)
+        uow._store.users[taken.id] = taken
+        use_case = RegisterUserUseCase(uow, email_sender)
+        dto = UserCreateDTO(
+            username="taken",
+            email="newcomer@example.com",
+            password="password123",
+            consent_personal_data=True,
+        )
+        with pytest.raises(DuplicateEntityError) as exc_info:
+            await use_case.execute(dto)
+        assert exc_info.value.code == "duplicate_user_username"
 
     async def test_register_requires_consent(
         self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
