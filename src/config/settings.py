@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "OtherSide"
     SMTP_USE_TLS: bool = True
 
+    # Public site address, shown in transactional emails.
+    SITE_URL: str = "https://otherside-inc.ru"
     EMAIL_VERIFICATION_CODE_TTL_MINUTES: int = 15
     EMAIL_VERIFICATION_MAX_ATTEMPTS: int = 5
     # Minimum gap between two verification codes sent to the same address.

@@ -10,6 +10,7 @@ class TestProductionSettingsValidation:
     def test_production_requires_strong_secret(self) -> None:
         with pytest.raises(ValidationError, match="SECRET_KEY"):
             Settings(
+                _env_file=None,
                 ENV="production",
                 DEBUG=False,
                 SECRET_KEY="change-me",
@@ -23,6 +24,7 @@ class TestProductionSettingsValidation:
     def test_production_rejects_test_robokassa(self) -> None:
         with pytest.raises(ValidationError, match="ROBOKASSA_IS_TEST"):
             Settings(
+                _env_file=None,
                 ENV="production",
                 DEBUG=False,
                 SECRET_KEY="super-secret-production-key",
@@ -36,6 +38,7 @@ class TestProductionSettingsValidation:
     def test_production_rejects_wildcard_cors(self) -> None:
         with pytest.raises(ValidationError, match="CORS_ORIGINS"):
             Settings(
+                _env_file=None,
                 ENV="production",
                 DEBUG=False,
                 SECRET_KEY="super-secret-production-key",
@@ -49,6 +52,7 @@ class TestProductionSettingsValidation:
     def test_production_requires_smtp_host(self) -> None:
         with pytest.raises(ValidationError, match="SMTP_HOST"):
             Settings(
+                _env_file=None,
                 ENV="production",
                 DEBUG=False,
                 SECRET_KEY="super-secret-production-key",
@@ -61,6 +65,7 @@ class TestProductionSettingsValidation:
 
     def test_production_allows_full_smtp_config(self) -> None:
         settings = Settings(
+            _env_file=None,
             ENV="production",
             DEBUG=False,
             SECRET_KEY="super-secret-production-key",

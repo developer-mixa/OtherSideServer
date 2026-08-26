@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from dishka import Provider, Scope, provide
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from application.interfaces import EmailSenderProtocol
 from application.use_cases import (
     CreateCompanyGameUseCase,
     CreatePaymentUseCase,
@@ -51,7 +52,6 @@ from application.use_cases.landing import (
 )
 from config.settings import settings
 from infrastructure.db.unit_of_work import SqlAlchemyUnitOfWork
-from application.interfaces import EmailSenderProtocol
 from infrastructure.email.console_client import ConsoleEmailSender
 from infrastructure.email.smtp_client import SmtpEmailSender
 from infrastructure.payments.robokassa import RobokassaClient
@@ -96,6 +96,7 @@ class AppProvider(Provider):
             from_name=settings.SMTP_FROM_NAME,
             use_tls=settings.SMTP_USE_TLS,
             code_ttl_minutes=settings.EMAIL_VERIFICATION_CODE_TTL_MINUTES,
+            site_url=settings.SITE_URL,
         )
 
     @provide(scope=Scope.REQUEST)
