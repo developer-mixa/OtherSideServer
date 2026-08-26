@@ -53,6 +53,7 @@ def user_model_to_entity(model: UserModel) -> User:
         consent_personal_data_at=model.consent_personal_data_at,
         verification_code_hash=model.verification_code_hash,
         verification_code_expires_at=model.verification_code_expires_at,
+        verification_code_sent_at=model.verification_code_sent_at,
         verification_attempts=model.verification_attempts,
     )
 
@@ -70,6 +71,7 @@ def user_entity_to_model(entity: User) -> UserModel:
         consent_personal_data_at=entity.consent_personal_data_at,
         verification_code_hash=entity.verification_code_hash,
         verification_code_expires_at=entity.verification_code_expires_at,
+        verification_code_sent_at=entity.verification_code_sent_at,
         verification_attempts=entity.verification_attempts,
     )
 

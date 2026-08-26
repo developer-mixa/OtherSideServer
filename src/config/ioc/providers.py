@@ -51,6 +51,8 @@ from application.use_cases.landing import (
 )
 from config.settings import settings
 from infrastructure.db.unit_of_work import SqlAlchemyUnitOfWork
+from application.interfaces import EmailSenderProtocol
+from infrastructure.email.console_client import ConsoleEmailSender
 from infrastructure.email.smtp_client import SmtpEmailSender
 from infrastructure.payments.robokassa import RobokassaClient
 
@@ -81,7 +83,10 @@ class AppProvider(Provider):
         return SqlAlchemyUnitOfWork(session)
 
     @provide(scope=Scope.APP)
-    def email_sender(self) -> SmtpEmailSender:
+    def email_sender(self) -> EmailSenderProtocol:
+        if not settings.SMTP_HOST.strip():
+            # Only reachable outside production — settings validation requires SMTP there.
+            return ConsoleEmailSender()
         return SmtpEmailSender(
             host=settings.SMTP_HOST,
             port=settings.SMTP_PORT,
@@ -95,7 +100,7 @@ class AppProvider(Provider):
 
     @provide(scope=Scope.REQUEST)
     def register_user(
-        self, uow: SqlAlchemyUnitOfWork, email_sender: SmtpEmailSender
+        self, uow: SqlAlchemyUnitOfWork, email_sender: EmailSenderProtocol
     ) -> RegisterUserUseCase:
         return RegisterUserUseCase(uow, email_sender)
 
@@ -109,7 +114,7 @@ class AppProvider(Provider):
 
     @provide(scope=Scope.REQUEST)
     def resend_verification_code(
-        self, uow: SqlAlchemyUnitOfWork, email_sender: SmtpEmailSender
+        self, uow: SqlAlchemyUnitOfWork, email_sender: EmailSenderProtocol
     ) -> ResendVerificationCodeUseCase:
         return ResendVerificationCodeUseCase(uow, email_sender)
 

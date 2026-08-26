@@ -55,6 +55,9 @@ class UserModel(Base):
     verification_code_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    verification_code_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     verification_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     role: Mapped[RoleModel | None] = relationship(back_populates="users")

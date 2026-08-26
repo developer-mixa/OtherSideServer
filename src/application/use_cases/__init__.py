@@ -70,12 +70,33 @@ from domain.exceptions import (
     DuplicateEntityError,
     EmailNotVerifiedError,
     EntityNotFoundError,
+    RateLimitError,
     ValidationError,
 )
 from domain.value_objects import Email, Password, Username
 from infrastructure.cache.maintenance_cache import MaintenanceModeCache
 
 logger = logging.getLogger(__name__)
+
+
+def _guard_resend_cooldown(user: User, now: datetime) -> None:
+    """Reject a verification code request that comes too soon after the previous one.
+
+    Without this, the resend button (and re-registration) is an unlimited outbound-mail
+    trigger for any address someone cares to type in.
+    """
+    if user.verification_code_sent_at is None:
+        return
+    cooldown = timedelta(seconds=settings.EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS)
+    elapsed = now - user.verification_code_sent_at
+    if elapsed >= cooldown:
+        return
+    retry_after = max(1, int((cooldown - elapsed).total_seconds()))
+    raise RateLimitError(
+        f"A verification code was already sent. Retry in {retry_after} seconds.",
+        retry_after_seconds=retry_after,
+        code="verification_resend_too_soon",
+    )
 
 
 class RegisterUserUseCase:
@@ -118,6 +139,7 @@ class RegisterUserUseCase:
                 # The address was never proven to belong to anyone, so the half-finished
                 # signup is not a real account: take it over instead of dead-ending the
                 # user who abandoned verification and came back to register again.
+                _guard_resend_cooldown(existing, now)
                 if existing.role_id is None:
                     existing.role_id = (await self._require_default_role()).id
                 existing.username = username.value
@@ -126,6 +148,7 @@ class RegisterUserUseCase:
                 existing.consent_personal_data_at = now
                 existing.verification_code_hash = hash_verification_code(code)
                 existing.verification_code_expires_at = expires_at
+                existing.verification_code_sent_at = now
                 existing.verification_attempts = 0
                 await self._uow.users.update(existing)
                 user = existing
@@ -141,6 +164,7 @@ class RegisterUserUseCase:
                 )
                 user.verification_code_hash = hash_verification_code(code)
                 user.verification_code_expires_at = expires_at
+                user.verification_code_sent_at = now
                 await self._uow.users.add(user)
 
             await self._uow.commit()
@@ -244,11 +268,15 @@ class ResendVerificationCodeUseCase:
             if user.is_verified:
                 raise ValidationError("Email is already verified", code="email_already_verified")
 
+            now = datetime.now(timezone.utc)
+            _guard_resend_cooldown(user, now)
+
             code = generate_verification_code()
             user.verification_code_hash = hash_verification_code(code)
-            user.verification_code_expires_at = datetime.now(timezone.utc) + timedelta(
+            user.verification_code_expires_at = now + timedelta(
                 minutes=settings.EMAIL_VERIFICATION_CODE_TTL_MINUTES
             )
+            user.verification_code_sent_at = now
             user.verification_attempts = 0
             await self._uow.users.update(user)
             await self._uow.commit()

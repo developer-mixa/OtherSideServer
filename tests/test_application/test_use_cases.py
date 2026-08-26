@@ -53,6 +53,7 @@ from domain.exceptions import (
     DuplicateEntityError,
     EmailNotVerifiedError,
     EntityNotFoundError,
+    RateLimitError,
     ValidationError,
 )
 
@@ -161,6 +162,24 @@ class TestRegisterUserUseCase:
         assert stored.verification_attempts == 0
         assert stored.password_hash != "old-hash"
         assert stored.role_id is not None
+
+    async def test_register_reclaim_is_throttled_within_cooldown(
+        self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
+    ) -> None:
+        """Re-registering is a send path too, so it obeys the same cooldown."""
+        stale = User.create("stale", "spam@example.com", "old-hash")
+        stale.verification_code_sent_at = datetime.now(timezone.utc) - timedelta(seconds=10)
+        uow._store.users[stale.id] = stale
+        use_case = RegisterUserUseCase(uow, email_sender)
+        dto = UserCreateDTO(
+            username="spamuser",
+            email="spam@example.com",
+            password="password123",
+            consent_personal_data=True,
+        )
+        with pytest.raises(RateLimitError):
+            await use_case.execute(dto)
+        assert email_sender.sent == []
 
     async def test_register_rejects_username_owned_by_another_user(
         self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
@@ -286,6 +305,36 @@ class TestVerifyEmailUseCase:
 
 
 class TestResendVerificationCodeUseCase:
+    async def test_resend_is_throttled_within_cooldown(
+        self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
+    ) -> None:
+        user = User.create("pending", "throttled@example.com", "hash")
+        user.verification_code_sent_at = datetime.now(timezone.utc) - timedelta(seconds=30)
+        uow._store.users[user.id] = user
+
+        use_case = ResendVerificationCodeUseCase(uow, email_sender)
+        with pytest.raises(RateLimitError) as exc_info:
+            await use_case.execute("throttled@example.com")
+
+        assert exc_info.value.code == "verification_resend_too_soon"
+        assert 0 < exc_info.value.retry_after_seconds <= 90
+        assert email_sender.sent == []
+
+    async def test_resend_allowed_once_cooldown_elapsed(
+        self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
+    ) -> None:
+        user = User.create("pending", "cooled@example.com", "hash")
+        user.verification_code_sent_at = datetime.now(timezone.utc) - timedelta(seconds=121)
+        uow._store.users[user.id] = user
+
+        use_case = ResendVerificationCodeUseCase(uow, email_sender)
+        await use_case.execute("cooled@example.com")
+
+        assert len(email_sender.sent) == 1
+        stored_user = await uow.users.get_by_email("cooled@example.com")
+        assert stored_user is not None
+        assert stored_user.verification_code_sent_at is not None
+
     async def test_resend_sends_new_code(
         self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
     ) -> None:

@@ -45,6 +45,8 @@ class Settings(BaseSettings):
 
     EMAIL_VERIFICATION_CODE_TTL_MINUTES: int = 15
     EMAIL_VERIFICATION_MAX_ATTEMPTS: int = 5
+    # Minimum gap between two verification codes sent to the same address.
+    EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: int = 120
 
     RATE_LIMIT_AUTH_REQUESTS: int = 10
     RATE_LIMIT_AUTH_WINDOW_SECONDS: int = 60

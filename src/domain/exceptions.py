@@ -87,3 +87,18 @@ class EmailNotVerifiedError(DomainError):
 
     def __init__(self, message: str = "Email not verified", code: str | None = None) -> None:
         super().__init__(message, code)
+
+
+class RateLimitError(DomainError):
+    """Raised when an action is attempted again before its cooldown elapsed."""
+
+    default_code = "rate_limited"
+
+    def __init__(
+        self,
+        message: str = "Too many requests",
+        retry_after_seconds: int = 0,
+        code: str | None = None,
+    ) -> None:
+        super().__init__(message, code)
+        self.retry_after_seconds = retry_after_seconds

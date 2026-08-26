@@ -22,6 +22,10 @@ class SmtpEmailSender:
         use_tls: bool = True,
         code_ttl_minutes: int = 15,
     ) -> None:
+        if not host.strip():
+            # aiosmtplib fails deep in the TLS handshake with an opaque
+            # "You must set server_hostname when using ssl without a host" — refuse early.
+            raise ValueError("SMTP host is required to send email")
         self._host = host
         self._port = port
         self._username = username

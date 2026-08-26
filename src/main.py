@@ -72,6 +72,9 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Browsers hide every response header cross-origin unless it is listed here,
+        # and the client needs Retry-After to say how long the cooldown has left.
+        expose_headers=["Retry-After"],
     )
     app.add_middleware(MaintenanceMiddleware, session_factory=maintenance_session_factory)
 

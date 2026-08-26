@@ -32,6 +32,7 @@ class User:
     consent_personal_data_at: datetime | None = None
     verification_code_hash: str | None = None
     verification_code_expires_at: datetime | None = None
+    verification_code_sent_at: datetime | None = None
     verification_attempts: int = 0
 
     @classmethod

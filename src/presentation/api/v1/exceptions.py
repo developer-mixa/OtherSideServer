@@ -16,6 +16,7 @@ from domain.exceptions import (
     EmailNotVerifiedError,
     EntityNotFoundError,
     PaymentVerificationError,
+    RateLimitError,
     ValidationError,
 )
 from presentation.api.v1.schemas.responses import ErrorResponse
@@ -60,6 +61,14 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=status.HTTP_403_FORBIDDEN,
             content=ErrorResponse(detail=exc.message, code=exc.code).model_dump(),
+        )
+
+    @app.exception_handler(RateLimitError)
+    async def rate_limit_handler(_: Request, exc: RateLimitError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content=ErrorResponse(detail=exc.message, code=exc.code).model_dump(),
+            headers={"Retry-After": str(exc.retry_after_seconds)},
         )
 
     @app.exception_handler(ValidationError)
