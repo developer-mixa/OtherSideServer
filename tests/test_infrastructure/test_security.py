@@ -41,3 +41,11 @@ class TestJWT:
         token = create_access_token({})
         with pytest.raises(AuthenticationError):
             get_user_id_from_token(token)
+
+    def test_non_uuid_sub_raises_auth_error_not_500(self) -> None:
+        # A correctly signed token whose `sub` is not a UUID must surface as an
+        # authentication failure, never bubble up as an unhandled 500.
+        token = create_access_token({"sub": "not-a-uuid"})
+        with pytest.raises(AuthenticationError) as exc_info:
+            get_user_id_from_token(token)
+        assert exc_info.value.code == "token_invalid"

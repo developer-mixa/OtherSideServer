@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 from decimal import Decimal
 from urllib.parse import urlencode
 
@@ -63,7 +64,7 @@ class RobokassaClient:
             invoice_id=invoice_id,
             extra_params=extra_params,
         )
-        if expected.lower() != signature_value.lower():
+        if not hmac.compare_digest(expected.lower(), signature_value.lower()):
             raise PaymentVerificationError("Invalid Robokassa signature")
 
     def format_result_response(self, invoice_id: str) -> str:

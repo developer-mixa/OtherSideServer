@@ -78,6 +78,11 @@ from infrastructure.cache.maintenance_cache import MaintenanceModeCache
 
 logger = logging.getLogger(__name__)
 
+# Precomputed once so that an authentication attempt for a non-existent email spends
+# the same bcrypt time as one for a real user — closing the login timing oracle that
+# otherwise distinguishes registered from unregistered addresses.
+_DUMMY_PASSWORD_HASH = hash_password("timing-attack-equalizer")
+
 
 def _guard_resend_cooldown(user: User, now: datetime) -> None:
     """Reject a verification code request that comes too soon after the previous one.
@@ -195,7 +200,11 @@ class LoginUserUseCase:
 
         async with self._uow:
             user = await self._uow.users.get_by_email(normalized_email)
-            if user is None or not verify_password(password, user.password_hash):
+            if user is None:
+                # Burn an equivalent bcrypt cycle so the timing matches the real path.
+                verify_password(password, _DUMMY_PASSWORD_HASH)
+                raise AuthenticationError()
+            if not verify_password(password, user.password_hash):
                 raise AuthenticationError()
             if user.is_blocked:
                 raise AuthorizationError("User is blocked", code="user_blocked")
@@ -218,7 +227,9 @@ class VerifyEmailUseCase:
         async with self._uow:
             user = await self._uow.users.get_by_email(normalized_email)
             if user is None:
-                raise EntityNotFoundError("User", normalized_email, code="user_not_found_by_email")
+                # Do not reveal whether the address is registered: an unknown email
+                # returns the same generic error as a wrong code.
+                raise ValidationError("Invalid verification code", code="verification_code_invalid")
             if user.is_verified:
                 raise ValidationError("Email is already verified", code="email_already_verified")
             if (
@@ -263,10 +274,11 @@ class ResendVerificationCodeUseCase:
 
         async with self._uow:
             user = await self._uow.users.get_by_email(normalized_email)
-            if user is None:
-                raise EntityNotFoundError("User", normalized_email, code="user_not_found_by_email")
-            if user.is_verified:
-                raise ValidationError("Email is already verified", code="email_already_verified")
+            if user is None or user.is_verified:
+                # Respond identically (204) whether or not the address is a real
+                # unverified account, so this endpoint is not an existence oracle.
+                # A genuine unverified user still gets the code below.
+                return
 
             now = datetime.now(timezone.utc)
             _guard_resend_cooldown(user, now)
@@ -298,6 +310,9 @@ class GetCurrentUserUseCase:
             user = await self._uow.users.get_by_id(user_id)
             if user is None:
                 raise EntityNotFoundError("User", user_id)
+            # A token issued before the account was blocked must stop working.
+            if user.is_blocked:
+                raise AuthorizationError("User is blocked", code="user_blocked")
             return await build_user_dto(self._uow, user)
 
 

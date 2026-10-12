@@ -145,6 +145,36 @@ class TestProcessRobokassaWebhookUseCase:
         assert subs[0].active_until is None
         assert subs[0].source_payment_id == payment.id
 
+    async def test_webhook_payload_is_persisted_without_signature(
+        self,
+        fake_uow: FakeUnitOfWork,
+        robokassa: RobokassaClient,
+        paying_user: User,
+        remove_ad_plan: SubscriptionPlan,
+    ) -> None:
+        payment = Payment.create(
+            user_id=paying_user.id,
+            plan_id=remove_ad_plan.id,
+            amount=Decimal("499.00"),
+            status="pending",
+            robokassa_invoice_id="2009",
+            idempotency_key="key-sig",
+        )
+        fake_uow._store.payments[payment.id] = payment
+
+        signature = hashlib.md5(b"499.00:2009:pass2").hexdigest()
+        use_case = ProcessRobokassaWebhookUseCase(fake_uow, robokassa)
+        await use_case.execute(
+            {"OutSum": "499.00", "InvId": "2009", "SignatureValue": signature}
+        )
+
+        webhook_events = [
+            e for e in fake_uow.payment_events.events if e.event_type == "robokassa.webhook"
+        ]
+        assert webhook_events, "expected a stored robokassa.webhook event"
+        assert "SignatureValue" not in webhook_events[0].payload
+        assert webhook_events[0].payload["InvId"] == "2009"
+
     async def test_webhook_is_idempotent(
         self,
         fake_uow: FakeUnitOfWork,

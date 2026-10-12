@@ -259,7 +259,9 @@ class FakePaymentRepo:
             None,
         )
 
-    async def get_by_robokassa_invoice_id(self, invoice_id: str) -> Payment | None:
+    async def get_by_robokassa_invoice_id(
+        self, invoice_id: str, *, for_update: bool = False
+    ) -> Payment | None:
         return next(
             (p for p in self._store.payments.values() if p.robokassa_invoice_id == invoice_id),
             None,

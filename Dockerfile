@@ -30,6 +30,16 @@ COPY src ./src
 COPY migrations ./migrations
 COPY alembic.ini ./
 
+# Drop root: an RCE/container-escape then starts from an unprivileged account.
+RUN adduser --system --no-create-home --group app \
+    && chown -R app:app /app
+USER app
+
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --proxy-headers + --forwarded-allow-ips lets uvicorn trust X-Forwarded-For from
+# the reverse proxy, so request.client.host (used for rate-limit keying and logs)
+# is the real client IP instead of the proxy's. The app is only reachable through
+# the proxy (prod binds 127.0.0.1), so trusting the immediate peer is safe here.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--proxy-headers", "--forwarded-allow-ips", "*"]

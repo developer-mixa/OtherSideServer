@@ -345,10 +345,16 @@ class SqlAlchemyPaymentRepository:
         model = result.scalar_one_or_none()
         return payment_model_to_entity(model) if model else None
 
-    async def get_by_robokassa_invoice_id(self, invoice_id: str) -> Payment | None:
-        result = await self._session.execute(
-            select(PaymentModel).where(PaymentModel.robokassa_invoice_id == invoice_id)
-        )
+    async def get_by_robokassa_invoice_id(
+        self, invoice_id: str, *, for_update: bool = False
+    ) -> Payment | None:
+        stmt = select(PaymentModel).where(PaymentModel.robokassa_invoice_id == invoice_id)
+        if for_update:
+            # Serialize concurrent webhook deliveries for the same invoice: the row
+            # lock is held until this UoW commits, so a second in-flight callback
+            # blocks here and then re-reads status="paid" instead of re-granting.
+            stmt = stmt.with_for_update()
+        result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
         return payment_model_to_entity(model) if model else None
 

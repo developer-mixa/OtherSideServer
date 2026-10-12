@@ -152,12 +152,16 @@ class TestAuthEndpoints:
         )
         assert response.status_code == 422
 
-    async def test_resend_verification_unknown_email_not_found(self, client: AsyncClient) -> None:
+    async def test_resend_verification_unknown_email_is_not_an_oracle(
+        self, client: AsyncClient
+    ) -> None:
+        # Unknown address returns the same 204 as a real unverified one — no
+        # account-existence leak.
         response = await client.post(
             "/api/v1/auth/resend-verification",
             json={"email": "unknown@example.com"},
         )
-        assert response.status_code == 404
+        assert response.status_code == 204
 
     async def test_me_authenticated(
         self, client: AsyncClient, auth_headers: dict[str, str]

@@ -298,10 +298,15 @@ class TestVerifyEmailUseCase:
         with pytest.raises(ValidationError):
             await use_case.execute("verified@example.com", "123456")
 
-    async def test_verify_email_unknown_user_not_found(self, uow: FakeUnitOfWork) -> None:
+    async def test_verify_email_unknown_email_is_not_an_oracle(
+        self, uow: FakeUnitOfWork
+    ) -> None:
+        # An unknown address must return the same generic error as a wrong code,
+        # so the endpoint does not reveal which emails are registered.
         use_case = VerifyEmailUseCase(uow)
-        with pytest.raises(EntityNotFoundError):
+        with pytest.raises(ValidationError) as exc_info:
             await use_case.execute("nobody@example.com", "123456")
+        assert exc_info.value.code == "verification_code_invalid"
 
 
 class TestResendVerificationCodeUseCase:
@@ -353,15 +358,24 @@ class TestResendVerificationCodeUseCase:
         assert stored_user.verification_attempts == 0
         assert stored_user.verification_code_hash == hash_verification_code(code)
 
-    async def test_resend_already_verified_rejected(
+    async def test_resend_already_verified_is_silent_noop(
         self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
     ) -> None:
+        # An already-verified account returns normally with no email sent, so the
+        # endpoint cannot be used to tell verified from unverified addresses.
         user = User.create("verified", "verified2@example.com", "hash", is_verified=True)
         uow._store.users[user.id] = user
 
         use_case = ResendVerificationCodeUseCase(uow, email_sender)
-        with pytest.raises(ValidationError):
-            await use_case.execute("verified2@example.com")
+        await use_case.execute("verified2@example.com")
+        assert email_sender.sent == []
+
+    async def test_resend_unknown_email_is_silent_noop(
+        self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
+    ) -> None:
+        use_case = ResendVerificationCodeUseCase(uow, email_sender)
+        await use_case.execute("nobody@example.com")
+        assert email_sender.sent == []
 
 
 class TestGetCurrentUserUseCase:
@@ -375,6 +389,14 @@ class TestGetCurrentUserUseCase:
         with pytest.raises(EntityNotFoundError):
             await GetCurrentUserUseCase(uow).execute(uuid4())
 
+    async def test_blocked_user_token_is_rejected(self, uow: FakeUnitOfWork) -> None:
+        # A token issued before the account was blocked must stop working.
+        user = User.create("blocked", "blocked3@example.com", "hash", is_blocked=True)
+        uow._store.users[user.id] = user
+        with pytest.raises(AuthorizationError) as exc_info:
+            await GetCurrentUserUseCase(uow).execute(user.id)
+        assert exc_info.value.code == "user_blocked"
+
 
 class TestListUsersUseCase:
     async def test_list_users_requires_admin(self, uow: FakeUnitOfWork) -> None:
@@ -385,6 +407,14 @@ class TestListUsersUseCase:
         emails = {u.email for u in result}
         assert "plain@example.com" in emails
         assert "admin@example.com" in emails
+
+    async def test_blocked_admin_is_forbidden(self, uow: FakeUnitOfWork) -> None:
+        # require_admin must reject a blocked admin even with a still-valid token.
+        admin = make_admin_user(uow._store)
+        admin.is_blocked = True
+        with pytest.raises(AuthorizationError) as exc_info:
+            await ListUsersUseCase(uow).execute(admin.id)
+        assert exc_info.value.code == "user_blocked"
 
     async def test_list_users_forbidden_for_regular_user(self, uow: FakeUnitOfWork) -> None:
         user = User.create("plain", "plain2@example.com", "hash")

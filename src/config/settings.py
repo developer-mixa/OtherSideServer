@@ -6,6 +6,9 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _INSECURE_SECRET_KEYS = frozenset({"change-me", "change-me-in-production"})
+# HS256 tokens are only as strong as this key: a short/low-entropy value is
+# brute-forceable offline from any issued token.
+_MIN_SECRET_KEY_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -80,11 +83,20 @@ class Settings(BaseSettings):
         if self.bootstrap_admin_configured and len(self.BOOTSTRAP_ADMIN_PASSWORD) < 12:
             raise ValueError("BOOTSTRAP_ADMIN_PASSWORD must be at least 12 characters")
 
+        # Enforce signing-key strength in every environment that is not explicitly
+        # local dev. This fails closed: a staging deploy, or a production one whose
+        # ENV was left at a non-"production" value, still cannot boot with the
+        # publicly-known default or a weak, brute-forceable key.
+        if not self.is_local:
+            if self.SECRET_KEY in _INSECURE_SECRET_KEYS:
+                raise ValueError("SECRET_KEY must be set to a strong unique value outside local")
+            if len(self.SECRET_KEY) < _MIN_SECRET_KEY_LENGTH:
+                raise ValueError(
+                    f"SECRET_KEY must be at least {_MIN_SECRET_KEY_LENGTH} characters outside local"
+                )
+
         if not self.is_production:
             return self
-
-        if self.SECRET_KEY in _INSECURE_SECRET_KEYS:
-            raise ValueError("SECRET_KEY must be set to a strong unique value in production")
 
         if self.DEBUG:
             raise ValueError("DEBUG must be false in production")

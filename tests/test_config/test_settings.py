@@ -27,7 +27,7 @@ class TestProductionSettingsValidation:
                 _env_file=None,
                 ENV="production",
                 DEBUG=False,
-                SECRET_KEY="super-secret-production-key",
+                SECRET_KEY="super-secret-production-key-0123456789",
                 CORS_ORIGINS=["https://example.com"],
                 ROBOKASSA_MERCHANT_LOGIN="shop",
                 ROBOKASSA_PASSWORD1="pass1",
@@ -41,7 +41,7 @@ class TestProductionSettingsValidation:
                 _env_file=None,
                 ENV="production",
                 DEBUG=False,
-                SECRET_KEY="super-secret-production-key",
+                SECRET_KEY="super-secret-production-key-0123456789",
                 CORS_ORIGINS=["*"],
                 ROBOKASSA_MERCHANT_LOGIN="shop",
                 ROBOKASSA_PASSWORD1="pass1",
@@ -55,7 +55,7 @@ class TestProductionSettingsValidation:
                 _env_file=None,
                 ENV="production",
                 DEBUG=False,
-                SECRET_KEY="super-secret-production-key",
+                SECRET_KEY="super-secret-production-key-0123456789",
                 CORS_ORIGINS=["https://example.com"],
                 ROBOKASSA_MERCHANT_LOGIN="shop",
                 ROBOKASSA_PASSWORD1="pass1",
@@ -68,7 +68,7 @@ class TestProductionSettingsValidation:
             _env_file=None,
             ENV="production",
             DEBUG=False,
-            SECRET_KEY="super-secret-production-key",
+            SECRET_KEY="super-secret-production-key-0123456789",
             CORS_ORIGINS=["https://example.com"],
             ROBOKASSA_MERCHANT_LOGIN="shop",
             ROBOKASSA_PASSWORD1="pass1",
@@ -80,6 +80,31 @@ class TestProductionSettingsValidation:
             SMTP_FROM_EMAIL="noreply@otherside-inc.ru",
         )
         assert settings.is_production is True
+
+    def test_production_rejects_short_secret(self) -> None:
+        with pytest.raises(ValidationError, match="SECRET_KEY"):
+            Settings(
+                _env_file=None,
+                ENV="production",
+                DEBUG=False,
+                SECRET_KEY="short-key",
+                CORS_ORIGINS=["https://example.com"],
+                ROBOKASSA_MERCHANT_LOGIN="shop",
+                ROBOKASSA_PASSWORD1="pass1",
+                ROBOKASSA_PASSWORD2="pass2",
+                ROBOKASSA_IS_TEST=False,
+                SMTP_HOST="smtp.mail.selcloud.ru",
+                SMTP_USERNAME="user",
+                SMTP_PASSWORD="secret",
+                SMTP_FROM_EMAIL="noreply@otherside-inc.ru",
+            )
+
+    def test_non_local_env_enforces_secret_strength(self) -> None:
+        # Fail-closed: an ENV that is neither "local" nor "production" (e.g. a
+        # mislabeled or staging deploy) must still reject the default signing key,
+        # so the app cannot boot with a forgeable token secret.
+        with pytest.raises(ValidationError, match="SECRET_KEY"):
+            Settings(_env_file=None, ENV="staging", SECRET_KEY="change-me")
 
     def test_local_allows_defaults(self) -> None:
         settings = Settings(
