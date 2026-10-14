@@ -1,5 +1,6 @@
 """FastAPI application entrypoint."""
 
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from dishka import make_async_container
@@ -10,6 +11,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from application.bootstrap import bootstrap_admin_user
+from application.interfaces import PasswordHasherProtocol
 from config.ioc.providers import AppProvider
 from config.logging import setup_logging
 from config.settings import settings
@@ -31,14 +33,15 @@ def _make_engine() -> AsyncEngine:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_logging()
     # One-shot engine, disposed right after bootstrap so its pool doesn't sit
     # open and unused for the app's whole lifetime.
     bootstrap_engine = _make_engine()
     try:
         session_factory = async_sessionmaker(bootstrap_engine, expire_on_commit=False)
-        await bootstrap_admin_user(session_factory)
+        password_hasher = await app.state.dishka_container.get(PasswordHasherProtocol)
+        await bootstrap_admin_user(session_factory, password_hasher)
     finally:
         await bootstrap_engine.dispose()
     yield

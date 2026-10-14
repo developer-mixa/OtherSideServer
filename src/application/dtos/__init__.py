@@ -45,7 +45,21 @@ class UserUpdateDTO:
 @dataclass(slots=True)
 class AuthTokenDTO:
     access_token: str
+    refresh_token: str
+    expires_in: int
     token_type: str = "bearer"
+
+
+@dataclass(frozen=True, slots=True)
+class PasswordVerificationDTO:
+    """Outcome of checking a password against its stored hash.
+
+    ``updated_hash`` is set when the password was correct but the stored hash uses an
+    outdated algorithm or parameters; the caller should persist it.
+    """
+
+    is_valid: bool
+    updated_hash: str | None = None
 
 
 @dataclass(slots=True)

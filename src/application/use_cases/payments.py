@@ -167,11 +167,7 @@ class ProcessRobokassaWebhookUseCase:
                 await self._uow.commit()
                 raise PaymentVerificationError("Missing required Robokassa fields")
 
-            extra_params = {
-                key: value
-                for key, value in payload.items()
-                if key.startswith("Shp_")
-            }
+            extra_params = {key: value for key, value in payload.items() if key.startswith("Shp_")}
             try:
                 self._robokassa.verify_result_signature(
                     out_sum=out_sum,

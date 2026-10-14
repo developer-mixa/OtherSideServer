@@ -14,6 +14,7 @@ from infrastructure.db.models import (  # noqa: F401 — register models
     PaymentEventModel,
     PaymentModel,
     PromocodeModel,
+    RefreshTokenModel,
     RoleModel,
     SubscriptionModel,
     SubscriptionPlanModel,

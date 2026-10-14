@@ -37,9 +37,7 @@ class RobokassaClient:
     ) -> str:
         """Return redirect URL for the Robokassa payment page."""
         out_sum = self.format_amount(amount)
-        signature = self._md5(
-            f"{self._merchant_login}:{out_sum}:{invoice_id}:{self._password1}"
-        )
+        signature = self._md5(f"{self._merchant_login}:{out_sum}:{invoice_id}:{self._password1}")
         params = {
             "MerchantLogin": self._merchant_login,
             "OutSum": out_sum,

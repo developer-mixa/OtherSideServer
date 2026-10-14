@@ -10,12 +10,13 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from application.dtos import PaymentInitDTO
 from application.use_cases import (
+    AuthenticateAccessTokenUseCase,
     GetPaymentUseCase,
     InitiatePaymentUseCase,
     ListPaymentsUseCase,
     ProcessRobokassaWebhookUseCase,
 )
-from config.deps import bearer_scheme, resolve_user_id
+from config.deps import bearer_scheme, bearer_token
 from domain.exceptions import EntityNotFoundError, PaymentVerificationError, ValidationError
 from presentation.api.v1.mappers import payment_dto_to_response
 from presentation.api.v1.schemas.requests import PaymentInitRequest
@@ -28,9 +29,10 @@ router = APIRouter(prefix="/payments", tags=["payments"])
 @inject
 async def list_my_payments(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[ListPaymentsUseCase],
 ) -> list[PaymentResponse]:
-    user_id = resolve_user_id(credentials)
+    user_id = await authenticate.execute(bearer_token(credentials))
     payments = await use_case.execute(user_id)
     return [payment_dto_to_response(p) for p in payments]
 
@@ -40,9 +42,10 @@ async def list_my_payments(
 async def initiate_payment(
     body: PaymentInitRequest,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[InitiatePaymentUseCase],
 ) -> PaymentInitResponse:
-    user_id = resolve_user_id(credentials)
+    user_id = await authenticate.execute(bearer_token(credentials))
     result = await use_case.execute(
         user_id,
         PaymentInitDTO(plan_id=body.plan_id, idempotency_key=body.idempotency_key),
@@ -61,9 +64,10 @@ async def initiate_payment(
 async def get_payment(
     payment_id: UUID,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[GetPaymentUseCase],
 ) -> PaymentResponse:
-    user_id = resolve_user_id(credentials)
+    user_id = await authenticate.execute(bearer_token(credentials))
     payment = await use_case.execute(user_id, payment_id)
     return payment_dto_to_response(payment)
 
@@ -83,4 +87,6 @@ async def robokassa_result(
         body = await use_case.execute(payload)
         return Response(content=body, media_type="text/plain")
     except (PaymentVerificationError, EntityNotFoundError, ValidationError) as exc:
-        return Response(content=exc.message, status_code=status.HTTP_400_BAD_REQUEST, media_type="text/plain")
+        return Response(
+            content=exc.message, status_code=status.HTTP_400_BAD_REQUEST, media_type="text/plain"
+        )

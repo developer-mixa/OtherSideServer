@@ -9,6 +9,9 @@ _INSECURE_SECRET_KEYS = frozenset({"change-me", "change-me-in-production"})
 # HS256 tokens are only as strong as this key: a short/low-entropy value is
 # brute-forceable offline from any issued token.
 _MIN_SECRET_KEY_LENGTH = 32
+# OWASP Password Storage Cheat Sheet minimum for Argon2id.
+_MIN_ARGON2_TIME_COST = 2
+_MIN_ARGON2_MEMORY_COST_KIB = 19456
 
 
 class Settings(BaseSettings):
@@ -19,6 +22,16 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     JWT_ALG: str = "HS256"
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+
+    # Argon2id parameters. Defaults are the OWASP Password Storage Cheat Sheet baseline
+    # (m=19 MiB, t=2, p=1). Raising them later is safe: existing hashes are upgraded on
+    # the user's next successful login.
+    PASSWORD_HASH_TIME_COST: int = 2
+    PASSWORD_HASH_MEMORY_COST_KIB: int = 19456
+    PASSWORD_HASH_PARALLELISM: int = 1
+    # Hashes computed at once per process; each holds PASSWORD_HASH_MEMORY_COST_KIB of RAM.
+    PASSWORD_HASH_MAX_CONCURRENCY: int = 4
 
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/app"
     DB_POOL_SIZE: int = 10
@@ -83,6 +96,12 @@ class Settings(BaseSettings):
         if self.bootstrap_admin_configured and len(self.BOOTSTRAP_ADMIN_PASSWORD) < 12:
             raise ValueError("BOOTSTRAP_ADMIN_PASSWORD must be at least 12 characters")
 
+        if self.REFRESH_TOKEN_EXPIRE_DAYS < 1:
+            raise ValueError("REFRESH_TOKEN_EXPIRE_DAYS must be at least 1")
+
+        if self.PASSWORD_HASH_MAX_CONCURRENCY < 1:
+            raise ValueError("PASSWORD_HASH_MAX_CONCURRENCY must be at least 1")
+
         # Enforce signing-key strength in every environment that is not explicitly
         # local dev. This fails closed: a staging deploy, or a production one whose
         # ENV was left at a non-"production" value, still cannot boot with the
@@ -100,6 +119,17 @@ class Settings(BaseSettings):
 
         if self.DEBUG:
             raise ValueError("DEBUG must be false in production")
+
+        # Cheap parameters are fine for tests, never for real user passwords.
+        if (
+            self.PASSWORD_HASH_TIME_COST < _MIN_ARGON2_TIME_COST
+            or self.PASSWORD_HASH_MEMORY_COST_KIB < _MIN_ARGON2_MEMORY_COST_KIB
+        ):
+            raise ValueError(
+                "PASSWORD_HASH_* must be at least the OWASP baseline in production "
+                f"(time_cost>={_MIN_ARGON2_TIME_COST}, "
+                f"memory_cost_kib>={_MIN_ARGON2_MEMORY_COST_KIB})"
+            )
 
         if "*" in self.CORS_ORIGINS:
             raise ValueError("CORS_ORIGINS must not contain '*' in production")

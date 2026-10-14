@@ -1,12 +1,12 @@
 """API endpoint tests."""
 
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from httpx import AsyncClient
+from tests.conftest import FakeEmailSender, FakeUnitOfWork, hash_password
 
-from config.security import hash_password
 from domain.entities import CompanyGame, PromocodeEntity, Subscription, SubscriptionPlan, User
-from tests.conftest import FakeEmailSender, FakeUnitOfWork
 
 
 class TestHealthEndpoint:
@@ -116,6 +116,7 @@ class TestAuthEndpoints:
     async def test_resend_verification_sends_new_code(
         self,
         client: AsyncClient,
+        fake_uow: FakeUnitOfWork,
         fake_email_sender: FakeEmailSender,
     ) -> None:
         await client.post(
@@ -127,6 +128,11 @@ class TestAuthEndpoints:
                 "consent_personal_data": True,
             },
         )
+        # Resend right after registration is throttled by the cooldown; age the first
+        # code past it so this test exercises the actual resend path.
+        user = await fake_uow.users.get_by_email("resenduser@example.com")
+        assert user is not None
+        user.verification_code_sent_at = datetime.now(timezone.utc) - timedelta(hours=1)
         response = await client.post(
             "/api/v1/auth/resend-verification",
             json={"email": "resenduser@example.com"},
@@ -623,3 +629,173 @@ class TestSecurityHeaders:
         response = await client.get("/health")
         assert response.headers.get("X-Content-Type-Options") == "nosniff"
         assert response.headers.get("X-Frame-Options") == "DENY"
+
+
+class TestSessionEndpoints:
+    @staticmethod
+    async def _login(client: AsyncClient, fake_uow: FakeUnitOfWork) -> dict[str, object]:
+        user = User.create(
+            "sessionuser", "session@example.com", hash_password("password123"), is_verified=True
+        )
+        fake_uow._store.users[user.id] = user
+        response = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "session@example.com", "password": "password123"},
+        )
+        assert response.status_code == 200
+        return response.json()
+
+    async def test_login_response_is_backward_compatible_and_adds_refresh(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork
+    ) -> None:
+        body = await self._login(client, fake_uow)
+        assert set(body) == {"access_token", "token_type", "refresh_token", "expires_in"}
+        assert body["token_type"] == "bearer"
+        assert isinstance(body["expires_in"], int) and body["expires_in"] > 0
+
+    async def test_refresh_rotates_tokens(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork
+    ) -> None:
+        login = await self._login(client, fake_uow)
+
+        response = await client.post(
+            "/api/v1/auth/refresh", json={"refresh_token": login["refresh_token"]}
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["refresh_token"] != login["refresh_token"]
+        me = await client.get(
+            "/api/v1/auth/me", headers={"Authorization": f"Bearer {body['access_token']}"}
+        )
+        assert me.status_code == 200
+
+    async def test_refresh_reuse_is_401_with_code(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork
+    ) -> None:
+        login = await self._login(client, fake_uow)
+        payload = {"refresh_token": login["refresh_token"]}
+        assert (await client.post("/api/v1/auth/refresh", json=payload)).status_code == 200
+
+        response = await client.post("/api/v1/auth/refresh", json=payload)
+
+        assert response.status_code == 401
+        assert response.json()["code"] == "refresh_token_reused"
+
+    async def test_refresh_with_unknown_token(self, client: AsyncClient) -> None:
+        response = await client.post("/api/v1/auth/refresh", json={"refresh_token": "nope"})
+        assert response.status_code == 401
+        assert response.json()["code"] == "refresh_token_invalid"
+
+    async def test_refresh_validates_body(self, client: AsyncClient) -> None:
+        response = await client.post("/api/v1/auth/refresh", json={"refresh_token": "x" * 257})
+        assert response.status_code == 422
+
+    async def test_logout_then_refresh_fails(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork
+    ) -> None:
+        login = await self._login(client, fake_uow)
+        payload = {"refresh_token": login["refresh_token"]}
+
+        logout = await client.post("/api/v1/auth/logout", json=payload)
+        refresh = await client.post("/api/v1/auth/refresh", json=payload)
+
+        assert logout.status_code == 204
+        assert refresh.status_code == 401
+
+    async def test_logout_unknown_token_is_still_204(self, client: AsyncClient) -> None:
+        response = await client.post("/api/v1/auth/logout", json={"refresh_token": "unknown"})
+        assert response.status_code == 204
+
+    async def test_change_password_revokes_sessions(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork
+    ) -> None:
+        login = await self._login(client, fake_uow)
+
+        response = await client.post(
+            "/api/v1/auth/change-password",
+            json={"current_password": "password123", "new_password": "brand-new-pass"},
+            headers={"Authorization": f"Bearer {login['access_token']}"},
+        )
+
+        assert response.status_code == 204
+        refresh = await client.post(
+            "/api/v1/auth/refresh", json={"refresh_token": login["refresh_token"]}
+        )
+        assert refresh.status_code == 401
+        relogin = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "session@example.com", "password": "brand-new-pass"},
+        )
+        assert relogin.status_code == 200
+
+    async def test_change_password_wrong_current_is_422(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork
+    ) -> None:
+        login = await self._login(client, fake_uow)
+        response = await client.post(
+            "/api/v1/auth/change-password",
+            json={"current_password": "wrong-pass", "new_password": "brand-new-pass"},
+            headers={"Authorization": f"Bearer {login['access_token']}"},
+        )
+        assert response.status_code == 422
+        assert response.json()["code"] == "current_password_invalid"
+
+    async def test_change_password_requires_auth(self, client: AsyncClient) -> None:
+        response = await client.post(
+            "/api/v1/auth/change-password",
+            json={"current_password": "password123", "new_password": "brand-new-pass"},
+        )
+        assert response.status_code == 401
+
+    async def test_refresh_is_rate_limited(self, client: AsyncClient) -> None:
+        from config.settings import settings
+
+        statuses = [
+            (await client.post("/api/v1/auth/refresh", json={"refresh_token": "nope"})).status_code
+            for _ in range(settings.RATE_LIMIT_AUTH_REQUESTS + 1)
+        ]
+        assert statuses[-1] == 429
+        assert set(statuses[:-1]) == {401}
+
+
+class TestAccessTokenRevocation:
+    async def test_logout_revokes_access_token(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork
+    ) -> None:
+        login = await TestSessionEndpoints._login(client, fake_uow)
+        headers = {"Authorization": f"Bearer {login['access_token']}"}
+        assert (await client.get("/api/v1/auth/me", headers=headers)).status_code == 200
+
+        await client.post("/api/v1/auth/logout", json={"refresh_token": login["refresh_token"]})
+        response = await client.get("/api/v1/auth/me", headers=headers)
+
+        assert response.status_code == 401
+        assert response.json()["code"] == "session_revoked"
+
+    async def test_password_change_revokes_access_token(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork
+    ) -> None:
+        login = await TestSessionEndpoints._login(client, fake_uow)
+        headers = {"Authorization": f"Bearer {login['access_token']}"}
+
+        changed = await client.post(
+            "/api/v1/auth/change-password",
+            json={"current_password": "password123", "new_password": "brand-new-pass"},
+            headers=headers,
+        )
+        response = await client.get("/api/v1/auth/me", headers=headers)
+
+        assert changed.status_code == 204
+        assert response.status_code == 401
+        assert response.json()["code"] == "session_revoked"
+
+    async def test_revoked_token_rejected_on_admin_endpoints_too(
+        self, client: AsyncClient, fake_uow: FakeUnitOfWork
+    ) -> None:
+        login = await TestSessionEndpoints._login(client, fake_uow)
+        await client.post("/api/v1/auth/logout", json={"refresh_token": login["refresh_token"]})
+        response = await client.get(
+            "/api/v1/users", headers={"Authorization": f"Bearer {login['access_token']}"}
+        )
+        assert response.status_code == 401

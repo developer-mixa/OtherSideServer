@@ -9,8 +9,12 @@ from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials
 
 from application.dtos import UserUpdateDTO
-from application.use_cases import ListUsersUseCase, UpdateUserUseCase
-from config.deps import bearer_scheme, resolve_user_id
+from application.use_cases import (
+    AuthenticateAccessTokenUseCase,
+    ListUsersUseCase,
+    UpdateUserUseCase,
+)
+from config.deps import bearer_scheme, bearer_token
 from presentation.api.v1.mappers import user_dto_to_response
 from presentation.api.v1.schemas.requests import UserUpdateRequest
 from presentation.api.v1.schemas.responses import UserResponse
@@ -22,9 +26,10 @@ router = APIRouter(prefix="/users", tags=["users"])
 @inject
 async def list_users(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[ListUsersUseCase],
 ) -> list[UserResponse]:
-    actor_id = resolve_user_id(credentials)
+    actor_id = await authenticate.execute(bearer_token(credentials))
     users = await use_case.execute(actor_id)
     return [user_dto_to_response(u) for u in users]
 
@@ -35,9 +40,10 @@ async def update_user(
     user_id: UUID,
     body: UserUpdateRequest,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[UpdateUserUseCase],
 ) -> UserResponse:
-    actor_id = resolve_user_id(credentials)
+    actor_id = await authenticate.execute(bearer_token(credentials))
     dto = UserUpdateDTO(
         username=body.username,
         email=body.email,

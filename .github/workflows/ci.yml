@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch/PR makes the running pipeline obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Matches the runtime image (Dockerfile).
+  PYTHON_VERSION: "3.11"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  lint:
+    name: Lint & type check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e ".[dev]"
+      - name: ruff check
+        run: ruff check src tests --output-format=github
+      - name: ruff format
+        run: ruff format --check src tests
+      - name: mypy (strict)
+        run: mypy src
+
+  test:
+    name: Tests (PostgreSQL 16 via testcontainers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e ".[dev]"
+      # GitHub-hosted runners ship a Docker daemon, so the same fixtures that start
+      # postgres:16-alpine locally do so here. Includes the Alembic round-trip tests.
+      - name: pytest (coverage gate from pyproject.toml)
+        run: pytest -q --cov=src --cov-report=term-missing:skip-covered --cov-report=xml
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # Fresh pip/setuptools so the audit reports on our dependencies, not on whatever
+      # bootstrap tooling the runner image happens to carry.
+      - run: python -m pip install --upgrade pip setuptools
+      - run: pip install -e ".[dev]" pip-audit==2.10.1
+      - name: pip-audit
+        run: pip-audit --skip-editable --progress-spinner off
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          load: true
+          tags: otherside-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # Catches a missing runtime dependency or a broken import that only shows up
+      # in the slim image, without needing a database.
+      - name: Smoke test
+        run: docker run --rm otherside-api:ci python -c "import main; print(main.app.title)"

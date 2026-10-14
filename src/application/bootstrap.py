@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from application.auth import ADMIN_ROLE_NAME
-from config.security import hash_password
+from application.interfaces import PasswordHasherProtocol
 from config.settings import settings
 from domain.entities import User
 from domain.value_objects import Email, Password, Username
@@ -16,7 +16,10 @@ from infrastructure.db.unit_of_work import SqlAlchemyUnitOfWork
 logger = logging.getLogger(__name__)
 
 
-async def bootstrap_admin_user(session_factory: async_sessionmaker) -> None:
+async def bootstrap_admin_user(
+    session_factory: async_sessionmaker[AsyncSession],
+    password_hasher: PasswordHasherProtocol,
+) -> None:
     """Create the first admin account when bootstrap credentials are configured."""
     if not settings.bootstrap_admin_configured:
         return
@@ -57,7 +60,7 @@ async def bootstrap_admin_user(session_factory: async_sessionmaker) -> None:
             user = User.create(
                 username=Username(username).value,
                 email=email,
-                password_hash=hash_password(settings.BOOTSTRAP_ADMIN_PASSWORD),
+                password_hash=await password_hasher.hash(settings.BOOTSTRAP_ADMIN_PASSWORD),
                 role_id=admin_role.id,
                 is_verified=True,
             )

@@ -2,17 +2,51 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from datetime import date
-from uuid import UUID, uuid4
+import os
 
-import pytest
-from dishka import Provider, Scope, make_async_container, provide
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+# Hermetic settings, applied before anything imports `config.settings` (which reads the
+# environment once, at import). Env vars beat the developer's .env file, so tests never
+# pick up real SMTP/Robokassa credentials or a local DATABASE_URL from it.
+os.environ.update(
+    {
+        "ENV": "local",
+        "DEBUG": "false",
+        "SECRET_KEY": "test-secret-key-that-is-at-least-32-characters-long",
+        # Replaced with the test container URL by the `database_url` fixture.
+        "DATABASE_URL": "postgresql+asyncpg://unused:unused@127.0.0.1:1/unused",
+        "SMTP_HOST": "",
+        "SMTP_USERNAME": "",
+        "SMTP_PASSWORD": "",
+        "ROBOKASSA_MERCHANT_LOGIN": "",
+        "ROBOKASSA_PASSWORD1": "",
+        "ROBOKASSA_PASSWORD2": "",
+        "BOOTSTRAP_ADMIN_USERNAME": "",
+        "BOOTSTRAP_ADMIN_EMAIL": "",
+        "BOOTSTRAP_ADMIN_PASSWORD": "",
+    }
+)
 
-from application.dtos import UserDTO
-from application.use_cases import (
+from collections.abc import AsyncIterator, Callable, Iterator  # noqa: E402
+from datetime import date, datetime  # noqa: E402
+from pathlib import Path  # noqa: E402
+from uuid import UUID  # noqa: E402
+
+import pytest  # noqa: E402
+from alembic import command  # noqa: E402
+from alembic.config import Config  # noqa: E402
+from dishka import Provider, Scope, make_async_container, provide  # noqa: E402
+from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy.ext.asyncio import (  # noqa: E402
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import NullPool  # noqa: E402
+
+from application.use_cases import (  # noqa: E402
+    AuthenticateAccessTokenUseCase,
+    ChangePasswordUseCase,
     CreateCompanyGameUseCase,
     CreatePaymentUseCase,
     CreatePromocodeUseCase,
@@ -35,7 +69,9 @@ from application.use_cases import (
     ListSubscriptionsUseCase,
     ListUsersUseCase,
     LoginUserUseCase,
+    LogoutUseCase,
     ProcessRobokassaWebhookUseCase,
+    RefreshTokensUseCase,
     RegisterUserUseCase,
     ResendVerificationCodeUseCase,
     SetMaintenanceModeUseCase,
@@ -46,25 +82,42 @@ from application.use_cases import (
     UpdateUserUseCase,
     VerifyEmailUseCase,
 )
-from config.settings import settings
-from infrastructure.payments.robokassa import RobokassaClient
-from config.security import create_access_token, hash_password
-from domain.entities import (
+from config.security import create_access_token  # noqa: E402
+from config.settings import settings  # noqa: E402
+from domain.entities import (  # noqa: E402
     CompanyGame,
     Payment,
     PromocodeEntity,
+    RefreshToken,
     Role,
     Subscription,
     SubscriptionPlan,
     SystemSettings,
     User,
 )
-from infrastructure.db.base import Base
-from infrastructure.db.unit_of_work import SqlAlchemyUnitOfWork
-from main import create_app
+from infrastructure.cache.maintenance_cache import MaintenanceModeCache  # noqa: E402
+from infrastructure.db.unit_of_work import SqlAlchemyUnitOfWork  # noqa: E402
+from infrastructure.payments.robokassa import RobokassaClient  # noqa: E402
+from infrastructure.security.passwords import PwdlibPasswordHasher  # noqa: E402
+from main import create_app  # noqa: E402
+from presentation.middleware import rate_limit  # noqa: E402
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Same major version as docker-compose and production.
+POSTGRES_IMAGE = "postgres:16-alpine"
 
 
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+def make_test_password_hasher() -> PwdlibPasswordHasher:
+    """Argon2 with the cheapest valid parameters: tests check behavior, not hash strength."""
+    return PwdlibPasswordHasher(time_cost=1, memory_cost_kib=1024, parallelism=1, max_concurrency=4)
+
+
+_TEST_PASSWORD_HASHER = make_test_password_hasher()
+
+
+def hash_password(password: str) -> str:
+    """Synchronous hashing helper for building fixtures."""
+    return _TEST_PASSWORD_HASHER.hash_sync(password)
 
 
 class InMemoryStore:
@@ -78,6 +131,7 @@ class InMemoryStore:
         self.subscriptions: dict[UUID, Subscription] = {}
         self.promocodes: dict[UUID, PromocodeEntity] = {}
         self.payments: dict[UUID, Payment] = {}
+        self.refresh_tokens: dict[UUID, RefreshToken] = {}
         self.system_settings = SystemSettings(maintenance_mode=False)
 
         user_role = Role.create("user")
@@ -296,6 +350,53 @@ class FakePaymentEventRepo:
                 event.processed = True
 
 
+class FakeRefreshTokenRepo:
+    def __init__(self, store: InMemoryStore) -> None:
+        self._store = store
+
+    async def add(self, entity: RefreshToken) -> RefreshToken:
+        self._store.refresh_tokens[entity.id] = entity
+        return entity
+
+    async def get_by_hash(
+        self, token_hash: str, *, for_update: bool = False
+    ) -> RefreshToken | None:
+        return next(
+            (t for t in self._store.refresh_tokens.values() if t.token_hash == token_hash),
+            None,
+        )
+
+    async def revoke(
+        self, token_id: UUID, now: datetime, replaced_by_id: UUID | None = None
+    ) -> bool:
+        token = self._store.refresh_tokens.get(token_id)
+        if token is None or token.revoked_at is not None:
+            return False
+        token.revoked_at = now
+        token.replaced_by_id = replaced_by_id
+        return True
+
+    async def revoke_family(self, family_id: UUID, now: datetime) -> int:
+        return self._revoke_where(lambda t: t.family_id == family_id, now)
+
+    async def revoke_all_for_user(self, user_id: UUID, now: datetime) -> int:
+        return self._revoke_where(lambda t: t.user_id == user_id, now)
+
+    async def is_family_active(self, family_id: UUID) -> bool:
+        return any(
+            t.family_id == family_id and t.revoked_at is None
+            for t in self._store.refresh_tokens.values()
+        )
+
+    def _revoke_where(self, predicate: Callable[[RefreshToken], bool], now: datetime) -> int:
+        revoked = 0
+        for token in self._store.refresh_tokens.values():
+            if token.revoked_at is None and predicate(token):
+                token.revoked_at = now
+                revoked += 1
+        return revoked
+
+
 class FakeSystemSettingsRepo:
     def __init__(self, store: InMemoryStore) -> None:
         self._store = store
@@ -331,6 +432,7 @@ class FakeUnitOfWork:
         self.promocodes = FakePromocodeRepo(self._store)
         self.payments = FakePaymentRepo(self._store)
         self.payment_events = FakePaymentEventRepo()
+        self.refresh_tokens = FakeRefreshTokenRepo(self._store)
         self.system_settings = FakeSystemSettingsRepo(self._store)
         self._committed = False
 
@@ -353,6 +455,7 @@ class TestProvider(Provider):
         super().__init__()
         self._uow = uow
         self._email_sender = email_sender or FakeEmailSender()
+        self._password_hasher = make_test_password_hasher()
         self._robokassa = RobokassaClient(
             merchant_login=settings.ROBOKASSA_MERCHANT_LOGIN or "test_merchant",
             password1=settings.ROBOKASSA_PASSWORD1 or "password1",
@@ -366,11 +469,27 @@ class TestProvider(Provider):
 
     @provide(scope=Scope.REQUEST)
     def register_user(self) -> RegisterUserUseCase:
-        return RegisterUserUseCase(self._uow, self._email_sender)
+        return RegisterUserUseCase(self._uow, self._email_sender, self._password_hasher)
 
     @provide(scope=Scope.REQUEST)
     def login_user(self) -> LoginUserUseCase:
-        return LoginUserUseCase(self._uow)
+        return LoginUserUseCase(self._uow, self._password_hasher)
+
+    @provide(scope=Scope.REQUEST)
+    def authenticate_access_token(self) -> AuthenticateAccessTokenUseCase:
+        return AuthenticateAccessTokenUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def refresh_tokens(self) -> RefreshTokensUseCase:
+        return RefreshTokensUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def logout(self) -> LogoutUseCase:
+        return LogoutUseCase(self._uow)
+
+    @provide(scope=Scope.REQUEST)
+    def change_password(self) -> ChangePasswordUseCase:
+        return ChangePasswordUseCase(self._uow, self._password_hasher)
 
     @provide(scope=Scope.REQUEST)
     def verify_email(self) -> VerifyEmailUseCase:
@@ -510,8 +629,10 @@ def fake_email_sender() -> FakeEmailSender:
 
 @pytest.fixture
 async def client(
-    fake_uow: FakeUnitOfWork, fake_email_sender: FakeEmailSender
+    database_url: str, fake_uow: FakeUnitOfWork, fake_email_sender: FakeEmailSender
 ) -> AsyncIterator[AsyncClient]:
+    # `database_url` is requested for its side effect: MaintenanceMiddleware reads the
+    # maintenance flag straight from PostgreSQL, outside the faked Unit of Work.
     from dishka.integrations.fastapi import setup_dishka
 
     app = create_app()
@@ -566,20 +687,98 @@ def admin_headers(admin_user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _migrate(database_url: str) -> None:
+    """Build the schema with the real Alembic migrations, not metadata.create_all().
+
+    This way every test run also proves the migration chain applies cleanly. The Config
+    is created without an ini file on purpose: env.py would otherwise call fileConfig(),
+    which silences every logger configured before it (and breaks caplog).
+    """
+    settings.DATABASE_URL = database_url
+    config = Config()
+    config.set_main_option("script_location", str(PROJECT_ROOT / "migrations"))
+    command.upgrade(config, "head")
+
+
+@pytest.fixture(scope="session")
+def database_url() -> Iterator[str]:
+    """A migrated PostgreSQL for the whole test session.
+
+    Uses ``TEST_DATABASE_URL`` when set (an already running server, e.g. a CI service
+    container); otherwise starts a disposable container with testcontainers.
+    """
+    external_url = os.environ.get("TEST_DATABASE_URL")
+    if external_url:
+        _migrate(external_url)
+        yield external_url
+        return
+
+    from testcontainers.community.postgres import PostgresContainer
+
+    with PostgresContainer(POSTGRES_IMAGE, driver="asyncpg") as postgres:
+        url = postgres.get_connection_url()
+        _migrate(url)
+        yield url
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Mark every test that (transitively) needs the database as `integration`.
+
+    `pytest -m "not integration"` then runs the fast suite with no Docker at all.
+    """
+    for item in items:
+        if "database_url" in getattr(item, "fixturenames", ()):
+            item.add_marker(pytest.mark.integration)
+
+
+@pytest.fixture(autouse=True)
+def _reset_process_state() -> Iterator[None]:
+    """Process-global caches must not leak between tests."""
+    rate_limit._rate_limiter._requests.clear()
+    MaintenanceModeCache.invalidate()
+    yield
+    rate_limit._rate_limiter._requests.clear()
+    MaintenanceModeCache.invalidate()
+
+
 @pytest.fixture
-async def db_session() -> AsyncIterator[AsyncSession]:
-    """SQLite session for infrastructure integration tests."""
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with factory() as session:
-        yield session
-
+async def db_engine(database_url: str) -> AsyncIterator[AsyncEngine]:
+    # NullPool: every test runs on its own event loop, and a pooled asyncpg connection
+    # cannot be reused across loops.
+    engine = create_async_engine(database_url, poolclass=NullPool)
+    yield engine
     await engine.dispose()
 
 
 @pytest.fixture
-def uow(db_session: AsyncSession) -> SqlAlchemyUnitOfWork:
+async def db_session(db_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
+    """A session whose work is rolled back after the test, commits included.
+
+    The session joins an outer transaction and turns its own commit() calls into
+    SAVEPOINT releases, so the code under test commits for real while the test still
+    leaves the database untouched.
+    """
+    async with db_engine.connect() as connection:
+        transaction = await connection.begin()
+        session = AsyncSession(
+            bind=connection,
+            join_transaction_mode="create_savepoint",
+            expire_on_commit=False,
+        )
+        try:
+            yield session
+        finally:
+            await session.close()
+            await transaction.rollback()
+
+
+@pytest.fixture
+def pg_uow(db_session: AsyncSession) -> SqlAlchemyUnitOfWork:
     return SqlAlchemyUnitOfWork(db_session)
+
+
+@pytest.fixture
+def committing_session_factory(db_engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    """Sessions that really commit — for tests that need several connections to see the
+    same rows (e.g. lock contention). Such tests must clean up after themselves."""
+    return async_sessionmaker(db_engine, expire_on_commit=False)

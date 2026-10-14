@@ -3,8 +3,8 @@ services:
     build: .
     restart: unless-stopped
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     env_file:
       - .env
     ports:
@@ -13,6 +13,19 @@ services:
     # pool and its own in-memory rate-limiter counters — see the comment in .env.example
     # before raising this past what the host's vCPU count and RATE_LIMIT_* settings can absorb.
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS:-2}
+
+  # One-shot: applies pending Alembic migrations before the new api container starts.
+  # Migrations must stay backward compatible (expand/contract): during a redeploy the
+  # old api keeps serving traffic against the already-migrated schema.
+  migrate:
+    build: .
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    command: alembic upgrade head
 
   db:
     image: postgres:16

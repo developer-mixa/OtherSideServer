@@ -5,7 +5,13 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
-from tests.conftest import FakeEmailSender, FakeUnitOfWork, make_admin_user
+from tests.conftest import (
+    FakeEmailSender,
+    FakeUnitOfWork,
+    hash_password,
+    make_admin_user,
+    make_test_password_hasher,
+)
 
 from application.dtos import (
     CompanyGameCreateDTO,
@@ -45,7 +51,7 @@ from application.use_cases import (
     UpdateUserUseCase,
     VerifyEmailUseCase,
 )
-from config.security import hash_password, hash_verification_code
+from config.security import hash_verification_code
 from domain.entities import CompanyGame, PromocodeEntity, Role, Subscription, SubscriptionPlan, User
 from domain.exceptions import (
     AuthenticationError,
@@ -72,7 +78,7 @@ class TestRegisterUserUseCase:
     async def test_register_success(
         self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
     ) -> None:
-        use_case = RegisterUserUseCase(uow, email_sender)
+        use_case = RegisterUserUseCase(uow, email_sender, make_test_password_hasher())
         dto = UserCreateDTO(
             username="newuser",
             email="new@example.com",
@@ -88,7 +94,7 @@ class TestRegisterUserUseCase:
     async def test_register_sends_verification_code(
         self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
     ) -> None:
-        use_case = RegisterUserUseCase(uow, email_sender)
+        use_case = RegisterUserUseCase(uow, email_sender, make_test_password_hasher())
         dto = UserCreateDTO(
             username="codeuser",
             email="codeuser@example.com",
@@ -107,7 +113,7 @@ class TestRegisterUserUseCase:
     async def test_register_always_assigns_user_role(
         self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
     ) -> None:
-        use_case = RegisterUserUseCase(uow, email_sender)
+        use_case = RegisterUserUseCase(uow, email_sender, make_test_password_hasher())
         dto = UserCreateDTO(
             username="plainuser",
             email="plain@example.com",
@@ -124,7 +130,7 @@ class TestRegisterUserUseCase:
     ) -> None:
         user = User.create("existing", "dup@example.com", "hash", is_verified=True)
         uow._store.users[user.id] = user
-        use_case = RegisterUserUseCase(uow, email_sender)
+        use_case = RegisterUserUseCase(uow, email_sender, make_test_password_hasher())
         dto = UserCreateDTO(
             username="other",
             email="dup@example.com",
@@ -143,7 +149,7 @@ class TestRegisterUserUseCase:
         stale.verification_code_hash = hash_verification_code("111111")
         stale.verification_attempts = 5
         uow._store.users[stale.id] = stale
-        use_case = RegisterUserUseCase(uow, email_sender)
+        use_case = RegisterUserUseCase(uow, email_sender, make_test_password_hasher())
         dto = UserCreateDTO(
             username="retryuser",
             email="retry@example.com",
@@ -170,7 +176,7 @@ class TestRegisterUserUseCase:
         stale = User.create("stale", "spam@example.com", "old-hash")
         stale.verification_code_sent_at = datetime.now(timezone.utc) - timedelta(seconds=10)
         uow._store.users[stale.id] = stale
-        use_case = RegisterUserUseCase(uow, email_sender)
+        use_case = RegisterUserUseCase(uow, email_sender, make_test_password_hasher())
         dto = UserCreateDTO(
             username="spamuser",
             email="spam@example.com",
@@ -186,7 +192,7 @@ class TestRegisterUserUseCase:
     ) -> None:
         taken = User.create("taken", "someone@example.com", "hash", is_verified=True)
         uow._store.users[taken.id] = taken
-        use_case = RegisterUserUseCase(uow, email_sender)
+        use_case = RegisterUserUseCase(uow, email_sender, make_test_password_hasher())
         dto = UserCreateDTO(
             username="taken",
             email="newcomer@example.com",
@@ -200,7 +206,7 @@ class TestRegisterUserUseCase:
     async def test_register_requires_consent(
         self, uow: FakeUnitOfWork, email_sender: FakeEmailSender
     ) -> None:
-        use_case = RegisterUserUseCase(uow, email_sender)
+        use_case = RegisterUserUseCase(uow, email_sender, make_test_password_hasher())
         dto = UserCreateDTO(
             username="noconsent",
             email="noconsent@example.com",
@@ -217,7 +223,7 @@ class TestLoginUserUseCase:
             "loginuser", "login@example.com", hash_password("password123"), is_verified=True
         )
         uow._store.users[user.id] = user
-        use_case = LoginUserUseCase(uow)
+        use_case = LoginUserUseCase(uow, make_test_password_hasher())
         result = await use_case.execute("login@example.com", "password123")
         assert result.access_token
 
@@ -226,7 +232,7 @@ class TestLoginUserUseCase:
             "loginuser", "login@example.com", hash_password("password123"), is_verified=True
         )
         uow._store.users[user.id] = user
-        use_case = LoginUserUseCase(uow)
+        use_case = LoginUserUseCase(uow, make_test_password_hasher())
         with pytest.raises(AuthenticationError):
             await use_case.execute("login@example.com", "wrongpass")
 
@@ -239,14 +245,14 @@ class TestLoginUserUseCase:
         )
         user.is_blocked = True
         uow._store.users[user.id] = user
-        use_case = LoginUserUseCase(uow)
+        use_case = LoginUserUseCase(uow, make_test_password_hasher())
         with pytest.raises(AuthorizationError):
             await use_case.execute("blocked@example.com", "password123")
 
     async def test_login_unverified_user_rejected(self, uow: FakeUnitOfWork) -> None:
         user = User.create("unverifieduser", "unverified@example.com", hash_password("password123"))
         uow._store.users[user.id] = user
-        use_case = LoginUserUseCase(uow)
+        use_case = LoginUserUseCase(uow, make_test_password_hasher())
         with pytest.raises(EmailNotVerifiedError):
             await use_case.execute("unverified@example.com", "password123")
 
@@ -298,9 +304,7 @@ class TestVerifyEmailUseCase:
         with pytest.raises(ValidationError):
             await use_case.execute("verified@example.com", "123456")
 
-    async def test_verify_email_unknown_email_is_not_an_oracle(
-        self, uow: FakeUnitOfWork
-    ) -> None:
+    async def test_verify_email_unknown_email_is_not_an_oracle(self, uow: FakeUnitOfWork) -> None:
         # An unknown address must return the same generic error as a wrong code,
         # so the endpoint does not reveal which emails are registered.
         use_case = VerifyEmailUseCase(uow)

@@ -1,52 +1,17 @@
-"""Repository update() integration tests against a real Postgres instance.
+"""Repository integration tests against a real PostgreSQL (testcontainers).
 
-These tests exercise `SqlAlchemy*Repository.update()` directly (bypassing the
-Fake in-memory UoW used elsewhere) to cover the SQL `merge()` path added for
-Users, CompanyGame, SubscriptionPlan, Subscription and Promocode.
-
-Skipped automatically when no Postgres is reachable at `settings.DATABASE_URL`
-(these are integration tests, not unit tests — CI/dev environments without a
-running database should still get a green `tests/test_application` suite).
+These exercise the `SqlAlchemy*Repository` classes directly (bypassing the fake in-memory
+UoW used elsewhere), including the SQL `merge()` update path. Each test runs inside a
+transaction that is rolled back afterwards — see the `pg_uow` fixture in conftest.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from decimal import Decimal
 from uuid import uuid4
 
-import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-from config.settings import settings
 from domain.entities import CompanyGame, PromocodeEntity, Subscription, SubscriptionPlan, User
 from infrastructure.db.unit_of_work import SqlAlchemyUnitOfWork
-
-
-async def _postgres_reachable() -> bool:
-    try:
-        engine = create_async_engine(settings.DATABASE_URL)
-        async with engine.connect():
-            pass
-        await engine.dispose()
-        return True
-    except Exception:  # noqa: BLE001 - reachability probe, any failure means "skip"
-        return False
-
-
-@pytest.fixture
-async def pg_uow() -> AsyncIterator[SqlAlchemyUnitOfWork]:
-    if not await _postgres_reachable():
-        pytest.skip("Postgres is not reachable at settings.DATABASE_URL")
-
-    engine = create_async_engine(settings.DATABASE_URL)
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-    session: AsyncSession = factory()
-    try:
-        yield SqlAlchemyUnitOfWork(session)
-    finally:
-        await session.close()
-        await engine.dispose()
 
 
 def _unique(prefix: str) -> str:

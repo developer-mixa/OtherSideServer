@@ -1,11 +1,15 @@
 """Bootstrap admin user tests."""
 
-from config.security import hash_password, verify_password
-from domain.entities import User
-from tests.conftest import FakeUnitOfWork, InMemoryStore
+from tests.conftest import (
+    FakeUnitOfWork,
+    InMemoryStore,
+    hash_password,
+    make_test_password_hasher,
+)
 
 from application.bootstrap import bootstrap_admin_user
 from config import settings
+from domain.entities import User
 
 
 class _SessionContext:
@@ -58,14 +62,15 @@ class TestBootstrapAdminUser:
         monkeypatch.setattr(settings.settings, "BOOTSTRAP_ADMIN_PASSWORD", "securepassword12")
         _patch_sqlalchemy_uow(monkeypatch, uow)
 
-        await bootstrap_admin_user(_SessionFactory(object()))
+        await bootstrap_admin_user(_SessionFactory(object()), make_test_password_hasher())
 
         admin_role = await uow.roles.get_by_name("admin")
         assert admin_role is not None
         created = await uow.users.get_by_email("bootstrap@example.com")
         assert created is not None
         assert created.role_id == admin_role.id
-        assert verify_password("securepassword12", created.password_hash)
+        check = await make_test_password_hasher().verify("securepassword12", created.password_hash)
+        assert check.is_valid
 
     async def test_skips_when_admin_exists(self, monkeypatch) -> None:
         store = InMemoryStore()
@@ -85,6 +90,6 @@ class TestBootstrapAdminUser:
         monkeypatch.setattr(settings.settings, "BOOTSTRAP_ADMIN_PASSWORD", "securepassword12")
         _patch_sqlalchemy_uow(monkeypatch, uow)
 
-        await bootstrap_admin_user(_SessionFactory(object()))
+        await bootstrap_admin_user(_SessionFactory(object()), make_test_password_hasher())
 
         assert len(store.users) == 1

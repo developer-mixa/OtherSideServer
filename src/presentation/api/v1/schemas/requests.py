@@ -30,6 +30,17 @@ class ResendVerificationRequest(BaseModel):
     email: EmailStr
 
 
+class RefreshTokenRequest(BaseModel):
+    # Issued tokens are 43 chars (32 random bytes, base64url); the cap only stops
+    # someone from making us hash megabytes of junk.
+    refresh_token: str = Field(min_length=1, max_length=256)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=8)
+
+
 class RoleCreateRequest(BaseModel):
     role: str = Field(min_length=1, max_length=64)
 

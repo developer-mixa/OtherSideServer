@@ -1,18 +1,17 @@
 """Payment use case tests."""
 
+import hashlib
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-from uuid import uuid4
 
-import hashlib
 import pytest
+from tests.conftest import FakeUnitOfWork
 
 from application.dtos import PaymentInitDTO
 from application.use_cases.payments import InitiatePaymentUseCase, ProcessRobokassaWebhookUseCase
 from domain.entities import Payment, Subscription, SubscriptionPlan, User
 from domain.exceptions import DuplicateEntityError, PaymentVerificationError
 from infrastructure.payments.robokassa import RobokassaClient
-from tests.conftest import FakeUnitOfWork
 
 
 @pytest.fixture
@@ -164,9 +163,7 @@ class TestProcessRobokassaWebhookUseCase:
 
         signature = hashlib.md5(b"499.00:2009:pass2").hexdigest()
         use_case = ProcessRobokassaWebhookUseCase(fake_uow, robokassa)
-        await use_case.execute(
-            {"OutSum": "499.00", "InvId": "2009", "SignatureValue": signature}
-        )
+        await use_case.execute({"OutSum": "499.00", "InvId": "2009", "SignatureValue": signature})
 
         webhook_events = [
             e for e in fake_uow.payment_events.events if e.event_type == "robokassa.webhook"
@@ -222,9 +219,7 @@ class TestProcessRobokassaWebhookUseCase:
 
         signature = hashlib.md5(b"199.00:3101:pass2").hexdigest()
         use_case = ProcessRobokassaWebhookUseCase(fake_uow, robokassa)
-        await use_case.execute(
-            {"OutSum": "199.00", "InvId": "3101", "SignatureValue": signature}
-        )
+        await use_case.execute({"OutSum": "199.00", "InvId": "3101", "SignatureValue": signature})
 
         subs = [
             s
@@ -264,9 +259,7 @@ class TestProcessRobokassaWebhookUseCase:
 
         signature = hashlib.md5(b"199.00:3102:pass2").hexdigest()
         use_case = ProcessRobokassaWebhookUseCase(fake_uow, robokassa)
-        await use_case.execute(
-            {"OutSum": "199.00", "InvId": "3102", "SignatureValue": signature}
-        )
+        await use_case.execute({"OutSum": "199.00", "InvId": "3102", "SignatureValue": signature})
 
         subs = [
             s
