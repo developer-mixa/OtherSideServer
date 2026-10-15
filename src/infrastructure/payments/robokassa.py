@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 from decimal import Decimal
 from urllib.parse import urlencode
 
@@ -36,9 +37,7 @@ class RobokassaClient:
     ) -> str:
         """Return redirect URL for the Robokassa payment page."""
         out_sum = self.format_amount(amount)
-        signature = self._md5(
-            f"{self._merchant_login}:{out_sum}:{invoice_id}:{self._password1}"
-        )
+        signature = self._md5(f"{self._merchant_login}:{out_sum}:{invoice_id}:{self._password1}")
         params = {
             "MerchantLogin": self._merchant_login,
             "OutSum": out_sum,
@@ -63,7 +62,7 @@ class RobokassaClient:
             invoice_id=invoice_id,
             extra_params=extra_params,
         )
-        if expected.lower() != signature_value.lower():
+        if not hmac.compare_digest(expected.lower(), signature_value.lower()):
             raise PaymentVerificationError("Invalid Robokassa signature")
 
     def format_result_response(self, invoice_id: str) -> str:

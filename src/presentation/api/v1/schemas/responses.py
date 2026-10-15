@@ -35,7 +35,10 @@ class UserResponse(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
+    # Access token lifetime in seconds (RFC 6749 §5.1).
+    expires_in: int
 
 
 class CompanyGameResponse(BaseModel):

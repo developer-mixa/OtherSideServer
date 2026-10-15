@@ -217,8 +217,13 @@ POSTGRES_PASSWORD=<сильный-пароль-бд>
 ```bash
 cd /opt/otherside/OtherSideServer
 docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml exec api alembic upgrade head
 ```
+
+Миграции применяет одноразовый сервис `migrate` (`alembic upgrade head`): `api` стартует
+только после его успешного завершения. Если миграция упала —
+`docker compose -f docker-compose.prod.yml logs migrate`. Ручной
+`docker compose -f docker-compose.prod.yml exec api alembic upgrade head` по-прежнему
+работает (повторный запуск ничего не меняет), но больше не нужен.
 
 Проверка:
 
@@ -534,9 +539,11 @@ docker compose -f docker-compose.prod.yml restart api
 ```bash
 cd /opt/otherside/OtherSideServer
 git pull
-docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml exec api alembic upgrade head
+docker compose -f docker-compose.prod.yml up -d --build   # migrate отработает до старта api
 ```
+
+Миграции должны быть обратно совместимы с предыдущей версией кода (expand/contract):
+они применяются до перезапуска `api`.
 
 ### Фронтенд
 

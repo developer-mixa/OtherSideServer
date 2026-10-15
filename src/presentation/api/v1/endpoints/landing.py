@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials
 
 from application.dtos import LandingSettingsUpdateDTO, RoadmapTaskCreateDTO, RoadmapTaskUpdateDTO
+from application.use_cases import AuthenticateAccessTokenUseCase
 from application.use_cases.landing import (
     CreateRoadmapTaskUseCase,
     DeleteRoadmapTaskUseCase,
@@ -18,7 +19,7 @@ from application.use_cases.landing import (
     UpdateLandingSettingsUseCase,
     UpdateRoadmapTaskUseCase,
 )
-from config.deps import bearer_scheme, resolve_user_id
+from config.deps import bearer_scheme, bearer_token
 from presentation.api.v1.mappers import (
     landing_public_dto_to_response,
     landing_settings_dto_to_response,
@@ -51,9 +52,10 @@ async def get_landing_public(
 @inject
 async def get_landing_settings(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[GetLandingSettingsUseCase],
 ) -> LandingSettingsResponse:
-    user_id = resolve_user_id(credentials)
+    user_id = await authenticate.execute(bearer_token(credentials))
     result = await use_case.execute(user_id)
     return landing_settings_dto_to_response(result)
 
@@ -63,9 +65,10 @@ async def get_landing_settings(
 async def update_landing_settings(
     body: LandingSettingsUpdateRequest,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[UpdateLandingSettingsUseCase],
 ) -> LandingSettingsResponse:
-    user_id = resolve_user_id(credentials)
+    user_id = await authenticate.execute(bearer_token(credentials))
     dto = LandingSettingsUpdateDTO(
         countdown_title=body.countdown_title,
         release_date=body.release_date,
@@ -78,9 +81,10 @@ async def update_landing_settings(
 @inject
 async def list_roadmap_tasks(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[ListRoadmapTasksUseCase],
 ) -> list[RoadmapTaskResponse]:
-    user_id = resolve_user_id(credentials)
+    user_id = await authenticate.execute(bearer_token(credentials))
     results = await use_case.execute(user_id)
     return [roadmap_task_dto_to_response(item) for item in results]
 
@@ -90,9 +94,10 @@ async def list_roadmap_tasks(
 async def create_roadmap_task(
     body: RoadmapTaskCreateRequest,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[CreateRoadmapTaskUseCase],
 ) -> RoadmapTaskResponse:
-    user_id = resolve_user_id(credentials)
+    user_id = await authenticate.execute(bearer_token(credentials))
     dto = RoadmapTaskCreateDTO(
         title=body.title,
         description=body.description,
@@ -108,9 +113,10 @@ async def update_roadmap_task(
     task_id: UUID,
     body: RoadmapTaskUpdateRequest,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[UpdateRoadmapTaskUseCase],
 ) -> RoadmapTaskResponse:
-    user_id = resolve_user_id(credentials)
+    user_id = await authenticate.execute(bearer_token(credentials))
     dto = RoadmapTaskUpdateDTO(
         title=body.title,
         description=body.description,
@@ -126,7 +132,8 @@ async def update_roadmap_task(
 async def delete_roadmap_task(
     task_id: UUID,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[DeleteRoadmapTaskUseCase],
 ) -> None:
-    user_id = resolve_user_id(credentials)
+    user_id = await authenticate.execute(bearer_token(credentials))
     await use_case.execute(user_id, task_id)

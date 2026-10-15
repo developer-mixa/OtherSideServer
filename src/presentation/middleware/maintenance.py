@@ -3,32 +3,36 @@
 from __future__ import annotations
 
 import logging
-from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
+from starlette.types import ASGIApp
 
 from application.auth import ADMIN_ROLE_NAME
 from config.security import get_user_id_from_token
 from domain.exceptions import AuthenticationError
+from infrastructure.cache.maintenance_cache import MaintenanceModeCache
 from infrastructure.db.models import RoleModel, SystemSettingsModel, UserModel
 from presentation.api.v1.schemas.responses import ErrorResponse
-from infrastructure.cache.maintenance_cache import MaintenanceModeCache
 
 logger = logging.getLogger(__name__)
 
-BYPASS_PATHS = frozenset({
-    "/health",
-    "/api/docs",
-    "/api/redoc",
-    "/api/openapi.json",
-    "/api/v1/auth/login",
-    "/api/v1/settings/maintenance",
-    "/api/v1/payments/robokassa/result",
-})
+BYPASS_PATHS = frozenset(
+    {
+        "/health",
+        "/api/docs",
+        "/api/redoc",
+        "/api/openapi.json",
+        "/api/v1/auth/login",
+        # An admin working through maintenance must be able to renew an expired access token.
+        "/api/v1/auth/refresh",
+        "/api/v1/settings/maintenance",
+        "/api/v1/payments/robokassa/result",
+    }
+)
 
 MAINTENANCE_MESSAGE = "Service is temporarily unavailable due to scheduled maintenance"
 
@@ -38,7 +42,7 @@ class MaintenanceMiddleware(BaseHTTPMiddleware):
 
     def __init__(
         self,
-        app,
+        app: ASGIApp,
         session_factory: async_sessionmaker[AsyncSession],
     ) -> None:
         super().__init__(app)
@@ -71,9 +75,7 @@ class MaintenanceMiddleware(BaseHTTPMiddleware):
         try:
             async with self._session_factory() as session:
                 result = await session.execute(
-                    select(SystemSettingsModel.maintenance_mode).where(
-                        SystemSettingsModel.id == 1
-                    )
+                    select(SystemSettingsModel.maintenance_mode).where(SystemSettingsModel.id == 1)
                 )
                 value = result.scalar_one_or_none()
                 enabled = bool(value) if value is not None else False

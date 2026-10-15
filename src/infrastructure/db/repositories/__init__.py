@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import CursorResult, Result, delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.unit_of_work import EntityState, IdentityMap
@@ -16,6 +17,7 @@ from domain.entities import (
     Payment,
     PaymentEvent,
     PromocodeEntity,
+    RefreshToken,
     RoadmapTask,
     Role,
     Subscription,
@@ -30,6 +32,7 @@ from infrastructure.db.models import (
     PaymentEventModel,
     PaymentModel,
     PromocodeModel,
+    RefreshTokenModel,
     RoadmapTaskModel,
     RoleModel,
     SubscriptionModel,
@@ -50,6 +53,8 @@ from infrastructure.mappers import (
     payment_model_to_entity,
     promocode_entity_to_model,
     promocode_model_to_entity,
+    refresh_token_entity_to_model,
+    refresh_token_model_to_entity,
     roadmap_task_entity_to_model,
     roadmap_task_model_to_entity,
     role_entity_to_model,
@@ -321,9 +326,7 @@ class SqlAlchemyPromocodeRepository:
         return entity
 
     async def delete(self, promocode_id: UUID) -> None:
-        await self._session.execute(
-            delete(PromocodeModel).where(PromocodeModel.id == promocode_id)
-        )
+        await self._session.execute(delete(PromocodeModel).where(PromocodeModel.id == promocode_id))
 
 
 class SqlAlchemyPaymentRepository:
@@ -345,10 +348,16 @@ class SqlAlchemyPaymentRepository:
         model = result.scalar_one_or_none()
         return payment_model_to_entity(model) if model else None
 
-    async def get_by_robokassa_invoice_id(self, invoice_id: str) -> Payment | None:
-        result = await self._session.execute(
-            select(PaymentModel).where(PaymentModel.robokassa_invoice_id == invoice_id)
-        )
+    async def get_by_robokassa_invoice_id(
+        self, invoice_id: str, *, for_update: bool = False
+    ) -> Payment | None:
+        stmt = select(PaymentModel).where(PaymentModel.robokassa_invoice_id == invoice_id)
+        if for_update:
+            # Serialize concurrent webhook deliveries for the same invoice: the row
+            # lock is held until this UoW commits, so a second in-flight callback
+            # blocks here and then re-reads status="paid" instead of re-granting.
+            stmt = stmt.with_for_update()
+        result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
         return payment_model_to_entity(model) if model else None
 
@@ -390,9 +399,7 @@ class SqlAlchemyPaymentEventRepository:
 
     async def mark_processed(self, event_id: UUID) -> None:
         await self._session.execute(
-            PaymentEventModel.__table__.update()
-            .where(PaymentEventModel.id == event_id)
-            .values(processed=True)
+            update(PaymentEventModel).where(PaymentEventModel.id == event_id).values(processed=True)
         )
 
 
@@ -465,7 +472,7 @@ class SqlAlchemyLandingSettingsRepository:
             await self._session.flush()
         return landing_settings_model_to_entity(model)
 
-    async def update(self, countdown_title: str, release_date) -> LandingSettings:
+    async def update(self, countdown_title: str, release_date: date) -> LandingSettings:
         settings = await self.get()
         settings.countdown_title = countdown_title
         settings.release_date = release_date
@@ -510,3 +517,83 @@ class SqlAlchemyRoadmapTaskRepository:
 
     async def delete(self, task_id: UUID) -> None:
         await self._session.execute(delete(RoadmapTaskModel).where(RoadmapTaskModel.id == task_id))
+
+
+class SqlAlchemyRefreshTokenRepository:
+    """Refresh tokens are written with explicit UPDATE statements, not merge().
+
+    Revocation must be conditional on the row still being live (``revoked_at IS NULL``)
+    and bulk revocation must not load every row, so neither fits the identity map.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add(self, entity: RefreshToken) -> RefreshToken:
+        self._session.add(refresh_token_entity_to_model(entity))
+        # Flush now: the token being rotated is then updated to point at this row via
+        # replaced_by_id, and the FK requires the row to exist first.
+        await self._session.flush()
+        return entity
+
+    async def get_by_hash(
+        self, token_hash: str, *, for_update: bool = False
+    ) -> RefreshToken | None:
+        stmt = select(RefreshTokenModel).where(RefreshTokenModel.token_hash == token_hash)
+        if for_update:
+            # Serializes concurrent refreshes of the same token: the second request
+            # waits, then sees the token already revoked and is treated as reuse.
+            stmt = stmt.with_for_update()
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return refresh_token_model_to_entity(model) if model else None
+
+    async def revoke(
+        self, token_id: UUID, now: datetime, replaced_by_id: UUID | None = None
+    ) -> bool:
+        result = await self._session.execute(
+            update(RefreshTokenModel)
+            .where(RefreshTokenModel.id == token_id, RefreshTokenModel.revoked_at.is_(None))
+            .values(revoked_at=now, replaced_by_id=replaced_by_id)
+        )
+        return _rowcount(result) == 1
+
+    async def revoke_family(self, family_id: UUID, now: datetime) -> int:
+        result = await self._session.execute(
+            update(RefreshTokenModel)
+            .where(
+                RefreshTokenModel.family_id == family_id,
+                RefreshTokenModel.revoked_at.is_(None),
+            )
+            .values(revoked_at=now)
+        )
+        return _rowcount(result)
+
+    async def is_family_active(self, family_id: UUID) -> bool:
+        # Runs on every authenticated request; served by ix_refresh_tokens_family_id.
+        result = await self._session.execute(
+            select(RefreshTokenModel.id)
+            .where(
+                RefreshTokenModel.family_id == family_id,
+                RefreshTokenModel.revoked_at.is_(None),
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def revoke_all_for_user(self, user_id: UUID, now: datetime) -> int:
+        result = await self._session.execute(
+            update(RefreshTokenModel)
+            .where(
+                RefreshTokenModel.user_id == user_id,
+                RefreshTokenModel.revoked_at.is_(None),
+            )
+            .values(revoked_at=now)
+        )
+        return _rowcount(result)
+
+
+def _rowcount(result: Result[Any]) -> int:
+    # execute() is typed as returning a plain Result, but DML statements always produce a
+    # CursorResult, which is what carries rowcount.
+    return cast(CursorResult[Any], result).rowcount

@@ -8,8 +8,9 @@ from fastapi import APIRouter, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials
 
 from application.dtos import ContactSubmissionCreateDTO
+from application.use_cases import AuthenticateAccessTokenUseCase
 from application.use_cases.contact import ListContactSubmissionsUseCase, SubmitContactUseCase
-from config.deps import bearer_scheme, resolve_user_id
+from config.deps import bearer_scheme, bearer_token
 from presentation.api.v1.mappers import contact_submission_dto_to_response
 from presentation.api.v1.schemas.requests import ContactSubmitRequest
 from presentation.api.v1.schemas.responses import ContactSubmissionResponse
@@ -43,8 +44,9 @@ async def submit_contact(
 @inject
 async def list_contact_submissions(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[ListContactSubmissionsUseCase],
 ) -> list[ContactSubmissionResponse]:
-    user_id = resolve_user_id(credentials)
+    user_id = await authenticate.execute(bearer_token(credentials))
     results = await use_case.execute(user_id)
     return [contact_submission_dto_to_response(item) for item in results]

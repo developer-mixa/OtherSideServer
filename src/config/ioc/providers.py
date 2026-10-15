@@ -5,8 +5,10 @@ from collections.abc import AsyncIterator
 from dishka import Provider, Scope, provide
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from application.interfaces import EmailSenderProtocol
+from application.interfaces import EmailSenderProtocol, PasswordHasherProtocol
 from application.use_cases import (
+    AuthenticateAccessTokenUseCase,
+    ChangePasswordUseCase,
     CreateCompanyGameUseCase,
     CreatePaymentUseCase,
     CreatePromocodeUseCase,
@@ -29,7 +31,9 @@ from application.use_cases import (
     ListSubscriptionsUseCase,
     ListUsersUseCase,
     LoginUserUseCase,
+    LogoutUseCase,
     ProcessRobokassaWebhookUseCase,
+    RefreshTokensUseCase,
     RegisterUserUseCase,
     ResendVerificationCodeUseCase,
     SetMaintenanceModeUseCase,
@@ -55,6 +59,17 @@ from infrastructure.db.unit_of_work import SqlAlchemyUnitOfWork
 from infrastructure.email.console_client import ConsoleEmailSender
 from infrastructure.email.smtp_client import SmtpEmailSender
 from infrastructure.payments.robokassa import RobokassaClient
+from infrastructure.security.passwords import PwdlibPasswordHasher
+
+
+def build_password_hasher() -> PwdlibPasswordHasher:
+    """Password hasher configured from settings (shared by DI and one-off scripts)."""
+    return PwdlibPasswordHasher(
+        time_cost=settings.PASSWORD_HASH_TIME_COST,
+        memory_cost_kib=settings.PASSWORD_HASH_MEMORY_COST_KIB,
+        parallelism=settings.PASSWORD_HASH_PARALLELISM,
+        max_concurrency=settings.PASSWORD_HASH_MAX_CONCURRENCY,
+    )
 
 
 class AppProvider(Provider):
@@ -99,15 +114,44 @@ class AppProvider(Provider):
             site_url=settings.SITE_URL,
         )
 
-    @provide(scope=Scope.REQUEST)
-    def register_user(
-        self, uow: SqlAlchemyUnitOfWork, email_sender: EmailSenderProtocol
-    ) -> RegisterUserUseCase:
-        return RegisterUserUseCase(uow, email_sender)
+    @provide(scope=Scope.APP)
+    def password_hasher(self) -> PasswordHasherProtocol:
+        return build_password_hasher()
 
     @provide(scope=Scope.REQUEST)
-    def login_user(self, uow: SqlAlchemyUnitOfWork) -> LoginUserUseCase:
-        return LoginUserUseCase(uow)
+    def register_user(
+        self,
+        uow: SqlAlchemyUnitOfWork,
+        email_sender: EmailSenderProtocol,
+        password_hasher: PasswordHasherProtocol,
+    ) -> RegisterUserUseCase:
+        return RegisterUserUseCase(uow, email_sender, password_hasher)
+
+    @provide(scope=Scope.REQUEST)
+    def login_user(
+        self, uow: SqlAlchemyUnitOfWork, password_hasher: PasswordHasherProtocol
+    ) -> LoginUserUseCase:
+        return LoginUserUseCase(uow, password_hasher)
+
+    @provide(scope=Scope.REQUEST)
+    def authenticate_access_token(
+        self, uow: SqlAlchemyUnitOfWork
+    ) -> AuthenticateAccessTokenUseCase:
+        return AuthenticateAccessTokenUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def refresh_tokens(self, uow: SqlAlchemyUnitOfWork) -> RefreshTokensUseCase:
+        return RefreshTokensUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def logout(self, uow: SqlAlchemyUnitOfWork) -> LogoutUseCase:
+        return LogoutUseCase(uow)
+
+    @provide(scope=Scope.REQUEST)
+    def change_password(
+        self, uow: SqlAlchemyUnitOfWork, password_hasher: PasswordHasherProtocol
+    ) -> ChangePasswordUseCase:
+        return ChangePasswordUseCase(uow, password_hasher)
 
     @provide(scope=Scope.REQUEST)
     def verify_email(self, uow: SqlAlchemyUnitOfWork) -> VerifyEmailUseCase:

@@ -9,6 +9,7 @@ from domain.entities import (
     Payment,
     PaymentEvent,
     PromocodeEntity,
+    RefreshToken,
     RoadmapTask,
     Role,
     Subscription,
@@ -23,6 +24,7 @@ from infrastructure.db.models import (
     PaymentEventModel,
     PaymentModel,
     PromocodeModel,
+    RefreshTokenModel,
     RoadmapTaskModel,
     RoleModel,
     SubscriptionModel,
@@ -263,4 +265,30 @@ def roadmap_task_entity_to_model(entity: RoadmapTask) -> RoadmapTaskModel:
         description=entity.description,
         status=entity.status,
         sort_order=entity.sort_order,
+    )
+
+
+def refresh_token_model_to_entity(model: RefreshTokenModel) -> RefreshToken:
+    return RefreshToken(
+        id=model.id,
+        user_id=model.user_id,
+        family_id=model.family_id,
+        token_hash=model.token_hash,
+        created_at=model.created_at,
+        expires_at=model.expires_at,
+        revoked_at=model.revoked_at,
+        replaced_by_id=model.replaced_by_id,
+    )
+
+
+def refresh_token_entity_to_model(entity: RefreshToken) -> RefreshTokenModel:
+    return RefreshTokenModel(
+        id=entity.id,
+        user_id=entity.user_id,
+        family_id=entity.family_id,
+        token_hash=entity.token_hash,
+        created_at=entity.created_at,
+        expires_at=entity.expires_at,
+        revoked_at=entity.revoked_at,
+        replaced_by_id=entity.replaced_by_id,
     )

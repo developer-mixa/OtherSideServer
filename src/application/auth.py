@@ -25,6 +25,10 @@ async def require_admin(uow: UnitOfWorkProtocol, user_id: UUID) -> User:
     user = await uow.users.get_by_id(user_id)
     if user is None:
         raise EntityNotFoundError("User", user_id)
+    # Re-check block status from the DB on every privileged action: a still-valid
+    # token issued before the block must not keep working.
+    if user.is_blocked:
+        raise AuthorizationError("User is blocked", code="user_blocked")
     if not await user_is_admin(uow, user):
         raise AuthorizationError()
     return user

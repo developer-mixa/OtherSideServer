@@ -10,12 +10,13 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from application.dtos import PromocodeCreateDTO, PromocodeUpdateDTO
 from application.use_cases import (
+    AuthenticateAccessTokenUseCase,
     CreatePromocodeUseCase,
     DeletePromocodeUseCase,
     ListPromocodesUseCase,
     UpdatePromocodeUseCase,
 )
-from config.deps import bearer_scheme, resolve_user_id
+from config.deps import bearer_scheme, bearer_token
 from presentation.api.v1.mappers import promocode_dto_to_response
 from presentation.api.v1.schemas.requests import PromocodeCreateRequest, PromocodeUpdateRequest
 from presentation.api.v1.schemas.responses import PromocodeResponse
@@ -27,9 +28,10 @@ router = APIRouter(prefix="/promocodes", tags=["promocodes"])
 @inject
 async def list_promocodes(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[ListPromocodesUseCase],
 ) -> list[PromocodeResponse]:
-    actor_id = resolve_user_id(credentials)
+    actor_id = await authenticate.execute(bearer_token(credentials))
     codes = await use_case.execute(actor_id)
     return [promocode_dto_to_response(c) for c in codes]
 
@@ -39,9 +41,10 @@ async def list_promocodes(
 async def create_promocode(
     body: PromocodeCreateRequest,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[CreatePromocodeUseCase],
 ) -> PromocodeResponse:
-    actor_id = resolve_user_id(credentials)
+    actor_id = await authenticate.execute(bearer_token(credentials))
     dto = PromocodeCreateDTO(code=body.code, plan_id=body.plan_id, is_active=body.is_active)
     result = await use_case.execute(actor_id, dto)
     return promocode_dto_to_response(result)
@@ -53,9 +56,10 @@ async def update_promocode(
     promocode_id: UUID,
     body: PromocodeUpdateRequest,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[UpdatePromocodeUseCase],
 ) -> PromocodeResponse:
-    actor_id = resolve_user_id(credentials)
+    actor_id = await authenticate.execute(bearer_token(credentials))
     dto = PromocodeUpdateDTO(code=body.code, plan_id=body.plan_id, is_active=body.is_active)
     result = await use_case.execute(actor_id, promocode_id, dto)
     return promocode_dto_to_response(result)
@@ -66,7 +70,8 @@ async def update_promocode(
 async def delete_promocode(
     promocode_id: UUID,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[DeletePromocodeUseCase],
 ) -> None:
-    actor_id = resolve_user_id(credentials)
+    actor_id = await authenticate.execute(bearer_token(credentials))
     await use_case.execute(actor_id, promocode_id)

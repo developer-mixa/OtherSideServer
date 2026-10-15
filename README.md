@@ -1,5 +1,7 @@
 # OtherSide API
 
+[![CI](https://github.com/developer-mixa/OtherSideServer/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/developer-mixa/OtherSideServer/actions/workflows/ci.yml)
+
 Production-ready FastAPI backend with Clean Architecture, PostgreSQL, JWT auth, and Docker deployment.
 
 > Backend lives in `OtherSideServer/`. All commands below run from that directory.
@@ -10,6 +12,7 @@ Production-ready FastAPI backend with Clean Architecture, PostgreSQL, JWT auth, 
 - [Quick Start](#quick-start)
 - [Makefile Commands](#makefile-commands)
 - [API Endpoints](#api-endpoints-apiv1)
+- [Authentication & sessions](#authentication--sessions)
 - [First admin setup](#first-admin-setup)
   - [Promoting an additional user to admin](#promoting-an-additional-user-to-admin)
 - [Environment Variables](#environment-variables)
@@ -17,7 +20,9 @@ Production-ready FastAPI backend with Clean Architecture, PostgreSQL, JWT auth, 
 - [Настройка email-верификации (Selectel)](#настройка-email-верификации-selectel)
 - [Database Schema](#database-schema)
 - [Testing](#testing)
+- [CI & dependency hygiene](#ci--dependency-hygiene)
 - [Pre-commit](#pre-commit)
+- [Architecture decisions](#architecture-decisions)
 - [Production deployment](#production-deployment)
 
 ## Architecture
@@ -42,6 +47,9 @@ cd OtherSideServer
 cp .env.example .env
 make docker-up
 ```
+
+`docker compose up` runs a one-shot `migrate` service (`alembic upgrade head`) first; `api`
+starts only after it succeeds, so an empty database works out of the box.
 
 API available at: http://localhost:8000
 
@@ -71,10 +79,14 @@ make dev       # start uvicorn with hot reload
 
 | Command | Description |
 |---------|-------------|
+| `make install` | Install the project with dev dependencies (editable) |
 | `make dev` | Start dev server with hot reload |
-| `make test` | Run pytest with coverage (>80%) |
-| `make lint` | Run ruff + mypy |
+| `make test` | Full test suite + coverage gate (PostgreSQL via testcontainers, needs Docker) |
+| `make test-unit` | Fast tests only, no Docker (`-m "not integration"`) |
+| `make lint` | ruff check + ruff format --check + mypy --strict |
 | `make fmt` | Format code with ruff |
+| `make audit` | pip-audit of installed dependencies |
+| `make check` | lint + test + audit (what CI runs, minus the image build) |
 | `make migrate msg="Desc"` | Create Alembic migration |
 | `make upgrade` | Apply migrations |
 | `make docker-up` | Build and start all services |
@@ -87,7 +99,10 @@ make dev       # start uvicorn with hot reload
 | POST | `/auth/register` | No | Register user, sends email verification code |
 | POST | `/auth/verify-email` | No | Confirm email with the 6-digit code |
 | POST | `/auth/resend-verification` | No | Send a new verification code |
-| POST | `/auth/login` | No | Get JWT token (requires verified email) |
+| POST | `/auth/login` | No | Access + refresh tokens (requires verified email) |
+| POST | `/auth/refresh` | No (refresh token) | Rotate: new access + refresh, old refresh revoked |
+| POST | `/auth/logout` | No (refresh token) | Revoke the session the refresh token belongs to |
+| POST | `/auth/change-password` | Yes | Change password, revoke all sessions |
 | GET | `/auth/me` | Yes | Current user |
 | GET/POST | `/roles` | Admin | List/create roles |
 | GET/POST/DELETE | `/games` | Admin | Company games CRUD |
@@ -106,6 +121,38 @@ make dev       # start uvicorn with hot reload
 | GET | `/landing/public` | No | Countdown + roadmap for landing |
 | GET/PATCH | `/landing/settings` | Admin | Countdown title & release date |
 | GET/POST/PATCH/DELETE | `/landing/tasks` | Admin | Roadmap graph tasks |
+
+## Authentication & sessions
+
+- **Access token** — HS256 JWT (`sub`, `exp` required; `iat`, `sid`),
+  `ACCESS_TOKEN_EXPIRE_MINUTES` (60), sent as `Authorization: Bearer …`. `sid` is the
+  session id: every authenticated request checks that the session is still active (one
+  indexed lookup), so ending a session disables its access tokens immediately.
+- **Refresh token** — opaque random string (256 bit); only its SHA-256 is stored in
+  `refresh_tokens`. Valid `REFRESH_TOKEN_EXPIRE_DAYS` (30). Every `/auth/refresh` revokes the
+  presented token and issues a new one in the same *family* (login session).
+- **Reuse detection** — presenting an already-rotated refresh token revokes the whole family
+  and returns `401 refresh_token_reused`. Clients must not refresh concurrently.
+- **Revocation** — `/auth/logout` (this session), `/auth/change-password` and admin
+  block (`PATCH /users/{id}` with `is_blocked=true`) revoke the session(s); the next request
+  with an access token from a revoked session gets `401 session_revoked` (blocked users keep
+  getting `403 user_blocked`). Tokens issued before sessions existed carry no `sid` and are
+  accepted until their `exp`.
+- **Passwords** — Argon2id via pwdlib (OWASP baseline m=19 MiB, t=2, p=1). Legacy bcrypt
+  hashes keep working and are re-hashed to Argon2id on the user's next successful login.
+
+`/auth/login` response (fields `refresh_token` and `expires_in` were added; existing fields
+are unchanged):
+
+```json
+{"access_token": "eyJ…", "refresh_token": "kq3…", "token_type": "bearer", "expires_in": 3600}
+```
+
+Error codes: `refresh_token_invalid`, `refresh_token_expired`, `refresh_token_reused`,
+`session_revoked` (401),
+`user_blocked` (403), `current_password_invalid`, `password_unchanged`,
+`password_too_short` (422). Design: [ADR 0003](docs/adr/0003-refresh-token-rotation.md),
+[ADR 0002](docs/adr/0002-password-hashing-argon2-pwdlib.md).
 
 ## First admin setup
 
@@ -157,6 +204,11 @@ still need a page refresh to refetch `/auth/me` and show the admin UI.
 | `SECRET_KEY` | change-me | JWT signing key (**change in production**) |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | 60 | JWT TTL |
 | `JWT_ALG` | HS256 | JWT algorithm |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | 30 | Refresh token lifetime (restarts on every rotation) |
+| `PASSWORD_HASH_TIME_COST` | 2 | Argon2id iterations (production minimum: 2) |
+| `PASSWORD_HASH_MEMORY_COST_KIB` | 19456 | Argon2id memory per hash, KiB (production minimum: 19456) |
+| `PASSWORD_HASH_PARALLELISM` | 1 | Argon2id lanes |
+| `PASSWORD_HASH_MAX_CONCURRENCY` | 4 | Hashes computed at once per process (bounds RAM) |
 | `DATABASE_URL` | — | Async PostgreSQL URL (`postgresql+asyncpg://...`) |
 | `CORS_ORIGINS` | `["*"]` | Allowed CORS origins |
 | `ROBOKASSA_MERCHANT_LOGIN` | — | Robokassa merchant login |
@@ -281,15 +333,46 @@ email to ...` и не приводят к 500 — сам аккаунт при �
 Source of truth: Alembic migrations (`migrations/versions/`). `alembic upgrade head` builds the
 full schema from an empty database — there is no separate SQL init script.
 
-Tables: `roles`, `users`, `company_games`, `subscription_plans`, `subscriptions`, `promocodes`, `payments`, `payment_events`, `system_settings`, `contact_submissions`, `landing_settings`, `roadmap_tasks`
+Tables: `roles`, `users`, `refresh_tokens`, `company_games`, `subscription_plans`, `subscriptions`, `promocodes`, `payments`, `payment_events`, `system_settings`, `contact_submissions`, `landing_settings`, `roadmap_tasks`
+
+Migrations must be backward compatible with the previous release (expand/contract): they
+run before the new `api` container starts while the old one may still serve traffic.
 
 ## Testing
 
 ```bash
-make test
+make test-unit   # ~1 s, no Docker: domain, use cases (fake UoW), mappers, settings
+make test        # everything, incl. PostgreSQL integration tests and the coverage gate
 ```
 
-Tests use in-memory fake UoW for API/application layers and mapper round-trip tests for infrastructure.
+- **Unit tests** use the in-memory fake Unit of Work from `tests/conftest.py`.
+- **Integration tests** run against a real PostgreSQL 16: the session-scoped `database_url`
+  fixture starts `postgres:16-alpine` with testcontainers (or uses `TEST_DATABASE_URL` if
+  set) and builds the schema with the real Alembic migrations. Each test runs in a
+  transaction that is rolled back afterwards. Any test that needs the database is marked
+  `integration` automatically.
+- **Migrations** are checked on every run: full `upgrade → downgrade base → upgrade` and a
+  step-by-step downgrade of each revision, in a throwaway database.
+- Tests set their own environment before `config.settings` is imported and never read
+  your `.env`.
+- Coverage gate: `fail_under = 83` in `pyproject.toml` (the measured level when it was set;
+  raise it, never lower it).
+
+See [ADR 0001](docs/adr/0001-test-database-testcontainers.md).
+
+## CI & dependency hygiene
+
+`.github/workflows/ci.yml` runs four parallel jobs on every push to `main` and every PR:
+
+| Job | Checks |
+|---|---|
+| Lint & type check | `ruff check`, `ruff format --check`, `mypy --strict` |
+| Tests | full pytest with PostgreSQL 16 (testcontainers), coverage gate, `coverage.xml` artifact |
+| Dependency audit | `pip-audit` of all installed dependencies |
+| Docker image | buildx build (GHA layer cache) + smoke test inside the image |
+
+Dependabot (`.github/dependabot.yml`) opens weekly PRs for pip packages, GitHub Actions and
+the Docker base image. See [ADR 0004](docs/adr/0004-ci-pipeline.md).
 
 ## Pre-commit
 
@@ -299,6 +382,16 @@ pre-commit install
 ```
 
 Runs ruff (lint + format) and mypy on each commit.
+
+## Architecture decisions
+
+ADRs live in [`docs/adr/`](docs/adr/):
+
+- [0001 — Integration tests on PostgreSQL via testcontainers](docs/adr/0001-test-database-testcontainers.md)
+- [0002 — Password hashing: Argon2id via pwdlib, transparent bcrypt migration](docs/adr/0002-password-hashing-argon2-pwdlib.md)
+- [0003 — Refresh tokens: rotation and reuse detection](docs/adr/0003-refresh-token-rotation.md)
+- [0004 — CI on GitHub Actions, dependency audit, Dependabot](docs/adr/0004-ci-pipeline.md)
+- [0005 — Migrations as a one-shot compose service](docs/adr/0005-migrations-as-compose-one-shot.md)
 
 ## Production deployment
 

@@ -37,7 +37,12 @@ def user_dto_to_response(dto: UserDTO) -> UserResponse:
 
 
 def token_dto_to_response(dto: AuthTokenDTO) -> TokenResponse:
-    return TokenResponse(access_token=dto.access_token, token_type=dto.token_type)
+    return TokenResponse(
+        access_token=dto.access_token,
+        refresh_token=dto.refresh_token,
+        token_type=dto.token_type,
+        expires_in=dto.expires_in,
+    )
 
 
 def role_dto_to_response(dto: RoleDTO) -> RoleResponse:

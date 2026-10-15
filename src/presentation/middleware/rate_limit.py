@@ -30,6 +30,18 @@ _RATE_LIMIT_RULES: dict[str, tuple[int, int]] = {
         settings.RATE_LIMIT_AUTH_REQUESTS,
         settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
     ),
+    "/api/v1/auth/refresh": (
+        settings.RATE_LIMIT_AUTH_REQUESTS,
+        settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
+    ),
+    "/api/v1/auth/logout": (
+        settings.RATE_LIMIT_AUTH_REQUESTS,
+        settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
+    ),
+    "/api/v1/auth/change-password": (
+        settings.RATE_LIMIT_AUTH_REQUESTS,
+        settings.RATE_LIMIT_AUTH_WINDOW_SECONDS,
+    ),
     "/api/v1/contact/submissions": (
         settings.RATE_LIMIT_CONTACT_REQUESTS,
         settings.RATE_LIMIT_CONTACT_WINDOW_SECONDS,

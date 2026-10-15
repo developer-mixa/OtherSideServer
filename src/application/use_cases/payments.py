@@ -155,9 +155,11 @@ class ProcessRobokassaWebhookUseCase:
         signature = payload.get("SignatureValue", "")
 
         async with self._uow:
+            # Keep the signed secret-derived digest out of the persisted event record.
+            stored_payload = {k: v for k, v in payload.items() if k != "SignatureValue"}
             event = PaymentEvent.create(
                 event_type="robokassa.webhook",
-                payload=dict(payload),
+                payload=stored_payload,
             )
             await self._uow.payment_events.add(event)
 
@@ -165,11 +167,7 @@ class ProcessRobokassaWebhookUseCase:
                 await self._uow.commit()
                 raise PaymentVerificationError("Missing required Robokassa fields")
 
-            extra_params = {
-                key: value
-                for key, value in payload.items()
-                if key.startswith("Shp_")
-            }
+            extra_params = {key: value for key, value in payload.items() if key.startswith("Shp_")}
             try:
                 self._robokassa.verify_result_signature(
                     out_sum=out_sum,
@@ -181,7 +179,12 @@ class ProcessRobokassaWebhookUseCase:
                 await self._uow.commit()
                 raise
 
-            payment = await self._uow.payments.get_by_robokassa_invoice_id(invoice_id)
+            # Lock the payment row for the rest of this transaction so two callbacks
+            # for the same invoice cannot both pass the pending-status gate and grant
+            # the subscription twice (TOCTOU double-fulfilment).
+            payment = await self._uow.payments.get_by_robokassa_invoice_id(
+                invoice_id, for_update=True
+            )
             if payment is None:
                 event.payment_id = None
                 await self._uow.commit()

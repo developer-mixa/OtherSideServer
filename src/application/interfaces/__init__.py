@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Protocol
 from uuid import UUID
 
 from application.dtos import (
     CompanyGameCreateDTO,
     CompanyGameDTO,
+    PasswordVerificationDTO,
     PaymentCreateDTO,
     PaymentDTO,
     PromocodeCreateDTO,
@@ -28,6 +29,7 @@ from domain.entities import (
     Payment,
     PaymentEvent,
     PromocodeEntity,
+    RefreshToken,
     RoadmapTask,
     Role,
     Subscription,
@@ -94,7 +96,9 @@ class PromocodeRepositoryProtocol(Protocol):
 class PaymentRepositoryProtocol(Protocol):
     async def get_by_id(self, payment_id: UUID) -> Payment | None: ...
     async def get_by_idempotency_key(self, key: str) -> Payment | None: ...
-    async def get_by_robokassa_invoice_id(self, invoice_id: str) -> Payment | None: ...
+    async def get_by_robokassa_invoice_id(
+        self, invoice_id: str, *, for_update: bool = False
+    ) -> Payment | None: ...
     async def list_by_user(self, user_id: UUID) -> list[Payment]: ...
     async def add(self, entity: Payment) -> Payment: ...
     async def update(self, entity: Payment) -> Payment: ...
@@ -104,6 +108,27 @@ class PaymentEventRepositoryProtocol(Protocol):
     async def add(self, entity: PaymentEvent) -> PaymentEvent: ...
     async def list_unprocessed(self) -> list[PaymentEvent]: ...
     async def mark_processed(self, event_id: UUID) -> None: ...
+
+
+class RefreshTokenRepositoryProtocol(Protocol):
+    async def add(self, entity: RefreshToken) -> RefreshToken: ...
+    async def get_by_hash(
+        self, token_hash: str, *, for_update: bool = False
+    ) -> RefreshToken | None: ...
+
+    async def revoke(
+        self, token_id: UUID, now: datetime, replaced_by_id: UUID | None = None
+    ) -> bool:
+        """Revoke one live token. Returns False when it was already revoked."""
+        ...
+
+    async def revoke_family(self, family_id: UUID, now: datetime) -> int: ...
+
+    async def is_family_active(self, family_id: UUID) -> bool:
+        """True while the session still has a non-revoked token (i.e. was not ended)."""
+        ...
+
+    async def revoke_all_for_user(self, user_id: UUID, now: datetime) -> int: ...
 
 
 class SystemSettingsRepositoryProtocol(Protocol):
@@ -125,6 +150,15 @@ class EmailSenderProtocol(Protocol):
     async def send_verification_code(self, *, to_email: str, code: str) -> None: ...
 
 
+class PasswordHasherProtocol(Protocol):
+    async def hash(self, password: str) -> str: ...
+    async def verify(self, password: str, password_hash: str) -> PasswordVerificationDTO: ...
+
+    async def dummy_verify(self, password: str) -> None:
+        """Spend the same time as a real verify, for accounts that do not exist."""
+        ...
+
+
 class RoadmapTaskRepositoryProtocol(Protocol):
     async def get_by_id(self, task_id: UUID) -> RoadmapTask | None: ...
     async def list_all(self) -> list[RoadmapTask]: ...
@@ -134,18 +168,34 @@ class RoadmapTaskRepositoryProtocol(Protocol):
 
 
 class UnitOfWorkProtocol(Protocol):
-    roles: RoleRepositoryProtocol
-    users: UserRepositoryProtocol
-    company_games: CompanyGameRepositoryProtocol
-    subscription_plans: SubscriptionPlanRepositoryProtocol
-    subscriptions: SubscriptionRepositoryProtocol
-    promocodes: PromocodeRepositoryProtocol
-    payments: PaymentRepositoryProtocol
-    payment_events: PaymentEventRepositoryProtocol
-    system_settings: SystemSettingsRepositoryProtocol
-    contact_submissions: ContactSubmissionRepositoryProtocol
-    landing_settings: LandingSettingsRepositoryProtocol
-    roadmap_tasks: RoadmapTaskRepositoryProtocol
+    # Read-only properties, not plain attributes: a settable protocol member is invariant,
+    # so a UoW exposing a concrete SqlAlchemy*Repository would not satisfy it.
+    @property
+    def roles(self) -> RoleRepositoryProtocol: ...
+    @property
+    def users(self) -> UserRepositoryProtocol: ...
+    @property
+    def company_games(self) -> CompanyGameRepositoryProtocol: ...
+    @property
+    def subscription_plans(self) -> SubscriptionPlanRepositoryProtocol: ...
+    @property
+    def subscriptions(self) -> SubscriptionRepositoryProtocol: ...
+    @property
+    def promocodes(self) -> PromocodeRepositoryProtocol: ...
+    @property
+    def payments(self) -> PaymentRepositoryProtocol: ...
+    @property
+    def payment_events(self) -> PaymentEventRepositoryProtocol: ...
+    @property
+    def refresh_tokens(self) -> RefreshTokenRepositoryProtocol: ...
+    @property
+    def system_settings(self) -> SystemSettingsRepositoryProtocol: ...
+    @property
+    def contact_submissions(self) -> ContactSubmissionRepositoryProtocol: ...
+    @property
+    def landing_settings(self) -> LandingSettingsRepositoryProtocol: ...
+    @property
+    def roadmap_tasks(self) -> RoadmapTaskRepositoryProtocol: ...
 
     async def __aenter__(self) -> UnitOfWorkProtocol: ...
     async def __aexit__(
@@ -176,12 +226,14 @@ __all__ = [
     "RoleRepositoryProtocol",
     "UserRepositoryProtocol",
     "EmailSenderProtocol",
+    "PasswordHasherProtocol",
     "CompanyGameRepositoryProtocol",
     "SubscriptionPlanRepositoryProtocol",
     "SubscriptionRepositoryProtocol",
     "PromocodeRepositoryProtocol",
     "PaymentRepositoryProtocol",
     "PaymentEventRepositoryProtocol",
+    "RefreshTokenRepositoryProtocol",
     "SystemSettingsRepositoryProtocol",
     "UnitOfWorkProtocol",
 ]

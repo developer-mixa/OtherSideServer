@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 from uuid import UUID
 
 from application.auth import USER_ROLE_NAME, require_admin, user_is_admin
@@ -30,7 +29,11 @@ from application.dtos import (
     UserDTO,
     UserUpdateDTO,
 )
-from application.interfaces import EmailSenderProtocol, UnitOfWorkProtocol
+from application.interfaces import (
+    EmailSenderProtocol,
+    PasswordHasherProtocol,
+    UnitOfWorkProtocol,
+)
 from application.mappers import (
     company_game_to_dto,
     payment_to_dto,
@@ -38,20 +41,36 @@ from application.mappers import (
     role_to_dto,
     subscription_plan_to_dto,
     subscription_to_dto,
-    user_to_dto,
+)
+
+# Explicit `X as X` re-exports: the payment use cases live in their own module but are
+# imported from this package by DI wiring and endpoints.
+from application.use_cases.payments import (
+    GetPaymentUseCase as GetPaymentUseCase,
 )
 from application.use_cases.payments import (
-    GetPaymentUseCase,
-    InitiatePaymentUseCase,
-    ProcessRobokassaWebhookUseCase,
+    InitiatePaymentUseCase as InitiatePaymentUseCase,
 )
+from application.use_cases.payments import (
+    ProcessRobokassaWebhookUseCase as ProcessRobokassaWebhookUseCase,
+)
+from application.use_cases.sessions import (
+    AuthenticateAccessTokenUseCase as AuthenticateAccessTokenUseCase,
+)
+from application.use_cases.sessions import (
+    ChangePasswordUseCase as ChangePasswordUseCase,
+)
+from application.use_cases.sessions import (
+    LogoutUseCase as LogoutUseCase,
+)
+from application.use_cases.sessions import (
+    RefreshTokensUseCase as RefreshTokensUseCase,
+)
+from application.use_cases.sessions import issue_token_pair
 from application.users import build_user_dto
 from config.security import (
-    create_access_token,
     generate_verification_code,
-    hash_password,
     hash_verification_code,
-    verify_password,
     verify_verification_code,
 )
 from config.settings import settings
@@ -102,9 +121,15 @@ def _guard_resend_cooldown(user: User, now: datetime) -> None:
 class RegisterUserUseCase:
     """Register a new user with hashed password and send an email verification code."""
 
-    def __init__(self, uow: UnitOfWorkProtocol, email_sender: EmailSenderProtocol) -> None:
+    def __init__(
+        self,
+        uow: UnitOfWorkProtocol,
+        email_sender: EmailSenderProtocol,
+        password_hasher: PasswordHasherProtocol,
+    ) -> None:
         self._uow = uow
         self._email_sender = email_sender
+        self._password_hasher = password_hasher
 
     async def execute(self, dto: UserCreateDTO) -> UserDTO:
         if not dto.consent_personal_data:
@@ -115,6 +140,7 @@ class RegisterUserUseCase:
         username = Username(dto.username)
         email = Email(dto.email)
         Password(dto.password)
+        password_hash = await self._password_hasher.hash(dto.password)
 
         async with self._uow:
             existing = await self._uow.users.get_by_email(email.value)
@@ -143,7 +169,7 @@ class RegisterUserUseCase:
                 if existing.role_id is None:
                     existing.role_id = (await self._require_default_role()).id
                 existing.username = username.value
-                existing.password_hash = hash_password(dto.password)
+                existing.password_hash = password_hash
                 existing.consent_personal_data = True
                 existing.consent_personal_data_at = now
                 existing.verification_code_hash = hash_verification_code(code)
@@ -157,7 +183,7 @@ class RegisterUserUseCase:
                 user = User.create(
                     username=username.value,
                     email=email.value,
-                    password_hash=hash_password(dto.password),
+                    password_hash=password_hash,
                     role_id=default_role.id,
                     consent_personal_data=True,
                     consent_personal_data_at=now,
@@ -185,25 +211,39 @@ class RegisterUserUseCase:
 
 
 class LoginUserUseCase:
-    """Authenticate user and return JWT token."""
+    """Authenticate user and start a session: an access token plus a refresh token."""
 
-    def __init__(self, uow: UnitOfWorkProtocol) -> None:
+    def __init__(self, uow: UnitOfWorkProtocol, password_hasher: PasswordHasherProtocol) -> None:
         self._uow = uow
+        self._password_hasher = password_hasher
 
     async def execute(self, email: str, password: str) -> AuthTokenDTO:
         normalized_email = Email(email).value
 
         async with self._uow:
             user = await self._uow.users.get_by_email(normalized_email)
-            if user is None or not verify_password(password, user.password_hash):
+            if user is None:
+                # Burn an equivalent hashing cycle so the timing matches the real path —
+                # otherwise response time reveals which addresses are registered.
+                await self._password_hasher.dummy_verify(password)
+                raise AuthenticationError()
+            check = await self._password_hasher.verify(password, user.password_hash)
+            if not check.is_valid:
                 raise AuthenticationError()
             if user.is_blocked:
                 raise AuthorizationError("User is blocked", code="user_blocked")
             if not user.is_verified:
                 raise EmailNotVerifiedError()
 
-            token = create_access_token({"sub": str(user.id)})
-            return AuthTokenDTO(access_token=token)
+            if check.updated_hash is not None:
+                # Only now do we have the plaintext to re-hash a legacy bcrypt (or
+                # outdated-parameter) hash; this is how old hashes migrate to Argon2id.
+                user.password_hash = check.updated_hash
+                await self._uow.users.update(user)
+
+            tokens, _ = await issue_token_pair(self._uow, user.id, datetime.now(timezone.utc))
+            await self._uow.commit()
+            return tokens
 
 
 class VerifyEmailUseCase:
@@ -218,7 +258,9 @@ class VerifyEmailUseCase:
         async with self._uow:
             user = await self._uow.users.get_by_email(normalized_email)
             if user is None:
-                raise EntityNotFoundError("User", normalized_email, code="user_not_found_by_email")
+                # Do not reveal whether the address is registered: an unknown email
+                # returns the same generic error as a wrong code.
+                raise ValidationError("Invalid verification code", code="verification_code_invalid")
             if user.is_verified:
                 raise ValidationError("Email is already verified", code="email_already_verified")
             if (
@@ -263,10 +305,11 @@ class ResendVerificationCodeUseCase:
 
         async with self._uow:
             user = await self._uow.users.get_by_email(normalized_email)
-            if user is None:
-                raise EntityNotFoundError("User", normalized_email, code="user_not_found_by_email")
-            if user.is_verified:
-                raise ValidationError("Email is already verified", code="email_already_verified")
+            if user is None or user.is_verified:
+                # Respond identically (204) whether or not the address is a real
+                # unverified account, so this endpoint is not an existence oracle.
+                # A genuine unverified user still gets the code below.
+                return
 
             now = datetime.now(timezone.utc)
             _guard_resend_cooldown(user, now)
@@ -298,6 +341,9 @@ class GetCurrentUserUseCase:
             user = await self._uow.users.get_by_id(user_id)
             if user is None:
                 raise EntityNotFoundError("User", user_id)
+            # A token issued before the account was blocked must stop working.
+            if user.is_blocked:
+                raise AuthorizationError("User is blocked", code="user_blocked")
             return await build_user_dto(self._uow, user)
 
 
@@ -337,6 +383,12 @@ class UpdateUserUseCase:
                 user.is_verified = dto.is_verified
             if dto.is_blocked is not None:
                 user.is_blocked = dto.is_blocked
+                if dto.is_blocked:
+                    # Refresh already refuses blocked users; revoking as well means the
+                    # sessions stay dead even if the user is unblocked later.
+                    await self._uow.refresh_tokens.revoke_all_for_user(
+                        user.id, datetime.now(timezone.utc)
+                    )
 
             await self._uow.users.update(user)
             await self._uow.commit()

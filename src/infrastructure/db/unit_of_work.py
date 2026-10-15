@@ -14,6 +14,7 @@ from infrastructure.db.repositories import (
     SqlAlchemyPaymentEventRepository,
     SqlAlchemyPaymentRepository,
     SqlAlchemyPromocodeRepository,
+    SqlAlchemyRefreshTokenRepository,
     SqlAlchemyRoadmapTaskRepository,
     SqlAlchemyRoleRepository,
     SqlAlchemySubscriptionPlanRepository,
@@ -39,8 +40,11 @@ class SqlAlchemyUnitOfWork:
         self.promocodes = SqlAlchemyPromocodeRepository(session, self._identity_map)
         self.payments = SqlAlchemyPaymentRepository(session, self._identity_map)
         self.payment_events = SqlAlchemyPaymentEventRepository(session, self._identity_map)
+        self.refresh_tokens = SqlAlchemyRefreshTokenRepository(session)
         self.system_settings = SqlAlchemySystemSettingsRepository(session, self._identity_map)
-        self.contact_submissions = SqlAlchemyContactSubmissionRepository(session, self._identity_map)
+        self.contact_submissions = SqlAlchemyContactSubmissionRepository(
+            session, self._identity_map
+        )
         self.landing_settings = SqlAlchemyLandingSettingsRepository(session, self._identity_map)
         self.roadmap_tasks = SqlAlchemyRoadmapTaskRepository(session, self._identity_map)
 

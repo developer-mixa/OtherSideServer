@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
@@ -305,3 +305,50 @@ class PaymentEvent:
             event_type=event_type,
             payload=payload,
         )
+
+
+@dataclass
+class RefreshToken:
+    """A long-lived credential that can be exchanged for a new access token exactly once.
+
+    Only a hash of the token is stored. Every token issued by rotating another one shares
+    its ``family_id`` with the token issued at login, so presenting an already-used token
+    (a sign it was stolen) can revoke the whole chain at once.
+    """
+
+    id: UUID
+    user_id: UUID
+    family_id: UUID
+    token_hash: str
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None = None
+    replaced_by_id: UUID | None = None
+
+    @classmethod
+    def issue(
+        cls,
+        user_id: UUID,
+        token_hash: str,
+        now: datetime,
+        ttl: timedelta,
+        family_id: UUID | None = None,
+        entity_id: UUID | None = None,
+    ) -> RefreshToken:
+        """Create a token; without ``family_id`` it starts a new login session."""
+        token_id = entity_id or uuid4()
+        return cls(
+            id=token_id,
+            user_id=user_id,
+            family_id=family_id or token_id,
+            token_hash=token_hash,
+            created_at=now,
+            expires_at=now + ttl,
+        )
+
+    @property
+    def is_revoked(self) -> bool:
+        return self.revoked_at is not None
+
+    def is_expired(self, now: datetime) -> bool:
+        return now >= self.expires_at

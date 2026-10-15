@@ -4,6 +4,21 @@ services:
     ports:
       - "8000:8000"
     depends_on:
+      migrate:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/app
+    volumes:
+      - ./src:/app/src:ro
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # One-shot: brings the schema to head, then exits. `api` starts only if it succeeds,
+  # so `docker compose up` works on an empty database.
+  migrate:
+    build: .
+    depends_on:
       db:
         condition: service_healthy
     env_file:
@@ -12,7 +27,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/app
     volumes:
       - ./src:/app/src:ro
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+      - ./migrations:/app/migrations:ro
+    command: alembic upgrade head
 
   db:
     image: postgres:16

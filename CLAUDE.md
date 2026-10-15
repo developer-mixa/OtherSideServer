@@ -44,19 +44,31 @@ Domain never imports from application/infrastructure/presentation. Use cases dep
 
 - Unit tests (`tests/test_domain`, `tests/test_application`): no real DB, use the in-memory fake
   UoW/repos pattern already in `tests/conftest.py`.
-- Infra tests (`tests/test_infrastructure`): mapper round-trip tests, SQLite in-memory
-  (`sqlite+aiosqlite:///:memory:`) via `infrastructure/db/base.Base`.
-- API tests (`tests/test_presentation`): `httpx.AsyncClient` against `main.create_app()`.
-- Coverage must stay **>80%** (`[tool.coverage.report] fail_under = 80`). Every new use case
-  needs at least one unit test; every new endpoint needs at least one API test.
-- Run: `make test` (pytest + coverage), `make lint` (ruff + mypy) before considering work done.
+- Integration tests: real PostgreSQL 16 via testcontainers (`database_url` session fixture, or
+  `TEST_DATABASE_URL`), schema built by Alembic migrations. Use `pg_uow`/`db_session` (rolled
+  back after each test) or `committing_session_factory` (multi-connection tests; clean up
+  yourself). Tests depending on the DB are auto-marked `integration`. No SQLite.
+- API tests (`tests/test_presentation`): `httpx.AsyncClient` against `main.create_app()`; they
+  need the DB because `MaintenanceMiddleware` reads it directly.
+- Coverage gate is `[tool.coverage.report] fail_under` in pyproject (ratchet: raise, never
+  lower). Every new use case needs at least one unit test; every new endpoint needs at least
+  one API test; every migration must downgrade cleanly (`tests/test_migrations.py`).
+- Run: `make test-unit` (fast), `make test` (full + coverage), `make lint` (ruff + format +
+  mypy) before considering work done. CI (`.github/workflows/ci.yml`) runs the same.
+- Password hashing goes through `PasswordHasherProtocol` (never hash inline in a use case).
+- Authenticated endpoints resolve the caller with
+  `await authenticate.execute(bearer_token(credentials))` (`AuthenticateAccessTokenUseCase`
+  via dishka) — it also rejects access tokens of revoked sessions. Never decode the JWT alone.
+- Architectural decisions are recorded in `docs/adr/`.
 
 ## Commands
 
 ```bash
 make dev        # uvicorn --reload
-make test       # pytest -q --cov=src
-make lint       # ruff check + mypy
+make test       # full suite + coverage (Docker for testcontainers)
+make test-unit  # fast tests, no Docker
+make lint       # ruff check + ruff format --check + mypy
+make audit      # pip-audit
 make fmt        # ruff format + ruff check --fix
 make migrate msg="add X"   # alembic revision --autogenerate
 make upgrade    # alembic upgrade head

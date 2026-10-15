@@ -6,8 +6,6 @@ from enum import Enum
 from typing import Any, Generic, TypeVar
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 T = TypeVar("T")
 
 
@@ -42,7 +40,7 @@ class IdentityMap:
 
     def register(self, entity: Any, state: EntityState = EntityState.NEW) -> TrackedEntity[Any]:
         entity_type = type(entity)
-        entity_id: UUID = entity.id  # type: ignore[attr-defined]
+        entity_id: UUID = entity.id
         bucket = self._store.setdefault(entity_type, {})
         if entity_id in bucket:
             return bucket[entity_id]
@@ -53,11 +51,11 @@ class IdentityMap:
     def get(self, entity_type: type[T], entity_id: UUID) -> TrackedEntity[T] | None:
         bucket = self._store.get(entity_type, {})
         tracked = bucket.get(entity_id)
-        return tracked  # type: ignore[return-value]
+        return tracked
 
     def iter_by_state(self, entity_type: type[T], state: EntityState) -> list[TrackedEntity[T]]:
         bucket = self._store.get(entity_type, {})
-        return [t for t in bucket.values() if t.state == state]  # type: ignore[misc]
+        return [t for t in bucket.values() if t.state == state]
 
     def all_tracked(self) -> list[TrackedEntity[Any]]:
         result: list[TrackedEntity[Any]] = []

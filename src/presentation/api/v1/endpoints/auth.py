@@ -9,16 +9,22 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from application.dtos import UserCreateDTO
 from application.use_cases import (
+    AuthenticateAccessTokenUseCase,
+    ChangePasswordUseCase,
     GetCurrentUserUseCase,
     LoginUserUseCase,
+    LogoutUseCase,
+    RefreshTokensUseCase,
     RegisterUserUseCase,
     ResendVerificationCodeUseCase,
     VerifyEmailUseCase,
 )
-from config.deps import bearer_scheme, resolve_user_id
+from config.deps import bearer_scheme, bearer_token
 from presentation.api.v1.mappers import token_dto_to_response, user_dto_to_response
 from presentation.api.v1.schemas.requests import (
+    ChangePasswordRequest,
     LoginRequest,
+    RefreshTokenRequest,
     RegisterRequest,
     ResendVerificationRequest,
     VerifyEmailRequest,
@@ -77,8 +83,40 @@ async def login(
 @inject
 async def me(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
     use_case: FromDishka[GetCurrentUserUseCase],
 ) -> UserResponse:
-    user_id = resolve_user_id(credentials)
+    user_id = await authenticate.execute(bearer_token(credentials))
     result = await use_case.execute(user_id)
     return user_dto_to_response(result)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+@inject
+async def refresh(
+    body: RefreshTokenRequest,
+    use_case: FromDishka[RefreshTokensUseCase],
+) -> TokenResponse:
+    result = await use_case.execute(body.refresh_token)
+    return token_dto_to_response(result)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@inject
+async def logout(
+    body: RefreshTokenRequest,
+    use_case: FromDishka[LogoutUseCase],
+) -> None:
+    await use_case.execute(body.refresh_token)
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+@inject
+async def change_password(
+    body: ChangePasswordRequest,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    authenticate: FromDishka[AuthenticateAccessTokenUseCase],
+    use_case: FromDishka[ChangePasswordUseCase],
+) -> None:
+    user_id = await authenticate.execute(bearer_token(credentials))
+    await use_case.execute(user_id, body.current_password, body.new_password)
